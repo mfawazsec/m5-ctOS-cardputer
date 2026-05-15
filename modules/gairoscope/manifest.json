@@ -1,0 +1,10 @@
+{
+  "id": "gairoscope",
+  "name": "GAIROSCOPE Speaker-to-Gyroscope Covert Channel",
+  "version": "1.0.0",
+  "author": "fawaz",
+  "category": "acoustic",
+  "requires_hardware": ["speaker"],
+  "min_os_version": "2.0.0",
+  "entrypoint": "firmware.bin"
+}

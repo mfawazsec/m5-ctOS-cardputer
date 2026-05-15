@@ -1,0 +1,68 @@
+# ESP-IDF build artifacts
+build/
+.idf_cmake_*
+sdkconfig
+*.map
+*.elf
+*.bin
+*.hex
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+venv/
+.venv/
+.env
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+compile_commands.json
+
+# Secrets — never commit these
+secrets.h
+secrets.json
+nvs_data.bin
+pin.txt
+
+# Module packages (compiled artifacts)
+*.ctm
+*.bin
+
+# Logs
+*.log
+logs/
+
+# node (web tooling)
+node_modules/

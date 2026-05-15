@@ -1,0 +1,10 @@
+{
+  "id": "espnow_c2",
+  "name": "ESP-NOW Covert C2 Channel",
+  "version": "1.0.0",
+  "author": "fawaz",
+  "category": "wifi",
+  "requires_hardware": ["wifi"],
+  "min_os_version": "2.0.0",
+  "entrypoint": "firmware.bin"
+}

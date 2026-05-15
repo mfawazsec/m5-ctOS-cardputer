@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "ctOS_main.cpp"
+        "wifi/hotspot.cpp"
+        "wifi/webserver.cpp"
+        "ui/menu.cpp"
+        "ui/memory_view.cpp"
+        "ui/file_browser.cpp"
+        "ui/module_manager.cpp"
+        "modules/loader.cpp"
+        "modules/manifest.cpp"
+        "modules/registry.cpp"
+        "settings/config.cpp"
+    INCLUDE_DIRS "."
+    REQUIRES
+        m5unified
+        esp_wifi
+        esp_http_server
+        nvs_flash
+        fatfs
+        sdmmc
+        json
+        freertos
+        esp_psram
+)
