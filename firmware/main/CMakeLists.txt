@@ -27,5 +27,4 @@ idf_component_register(
         freertos
         esp_psram
         cardputer_keyboard
-        mbedtls
 )

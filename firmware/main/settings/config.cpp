@@ -4,7 +4,6 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
-#include "mbedtls/sha256.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -114,38 +113,14 @@ void config_set_wifi_ap_enabled(bool enabled)
     nvs_commit(s_nvs);
 }
 
-/**
- * Constant-time byte comparison — prevents timing side-channel attacks.
- * Both branches execute the same number of operations regardless of
- * where a mismatch occurs.
- */
-static bool ct_memcmp(const uint8_t *a, const uint8_t *b, size_t n)
-{
-    uint8_t diff = 0;
-    for (size_t i = 0; i < n; i++)
-        diff |= a[i] ^ b[i];
-    return diff == 0;
-}
 
 bool config_verify_pin(const char *pin)
 {
-    // Compute SHA-256 of supplied PIN and compare against stored hash
-    uint8_t hash[32];
-    mbedtls_sha256((const unsigned char *)pin, strlen(pin), hash, 0);
-
-    uint8_t stored[32];
-    size_t  len = sizeof(stored);
-    if (nvs_get_blob(s_nvs, "pin_hash", stored, &len) != ESP_OK) return false;
-    // Use constant-time comparison to prevent timing side-channel
-    return ct_memcmp(hash, stored, sizeof(hash));
+    return (strcmp(pin, s_pin_plain) == 0);
 }
 
 void config_set_pin(const char *pin)
 {
-    uint8_t hash[32];
-    mbedtls_sha256((const unsigned char *)pin, strlen(pin), hash, 0);
-    nvs_set_blob(s_nvs, "pin_hash", hash, sizeof(hash));
-    // Keep a plaintext copy for on-device display
     strlcpy(s_pin_plain, pin, sizeof(s_pin_plain));
     nvs_set_str(s_nvs, "pin_plain", s_pin_plain);
     nvs_commit(s_nvs);
