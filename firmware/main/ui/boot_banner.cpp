@@ -48,7 +48,7 @@ static void draw_centred(const char *str, int y, uint16_t color)
 {
     auto &d  = M5.Display;
     /* Each glyph is textSize * 6 px wide at the built-in font */
-    int text_w = (int)strlen(str) * 6 * (int)d.getTextSize();
+    int text_w = (int)strlen(str) * 6; /* textSize is always 1 here */
     int x      = (d.width() - text_w) / 2;
     if (x < 0) x = 0;
     d.setTextColor(color, COL_BG); /* explicit bg prevents ghost pixels */
