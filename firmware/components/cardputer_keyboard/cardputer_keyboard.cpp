@@ -97,15 +97,22 @@ bool cardputer_kb_init(void)
 {
     memset(&s_kbd, 0, sizeof(s_kbd));
 
-    /* Probe: read CFG register; if In_I2C isn't enabled or chip absent, skip */
     if (!M5.In_I2C.isEnabled()) {
         ESP_LOGW(TAG, "In_I2C not ready – keyboard disabled");
         return false;
     }
 
+    /* I2C bus scan — readRegister returns true only on ACK */
+    ESP_LOGI(TAG, "I2C scan on In_I2C bus:");
+    uint8_t dummy;
+    for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+        if (M5.In_I2C.readRegister(addr, 0x00, &dummy, 1, KBD_FREQ)) {
+            ESP_LOGI(TAG, "  0x%02X", addr);
+        }
+    }
+
     /* Try to ping TCA8418 by reading CFG */
     uint8_t cfg = tca_read(REG_CFG);
-    /* TCA8418 CFG reset value is 0x00; if we read 0xFF the chip isn't there */
     if (cfg == 0xFF) {
         ESP_LOGW(TAG, "TCA8418 not found at 0x%02X – keyboard disabled",
                  TCA8418_ADDR);

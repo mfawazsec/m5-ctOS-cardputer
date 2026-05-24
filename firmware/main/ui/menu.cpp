@@ -19,7 +19,7 @@ void ui_menu_init(void)
     M5.begin(cfg);
     M5.Display.setRotation(1);
     M5.Display.setBrightness(config_get_brightness());
-    M5.Display.setTextSize(1);
+    M5.Display.setTextSize(2);
     ESP_LOGI(TAG, "Display init: %dx%d",
              (int)M5.Display.width(), (int)M5.Display.height());
 
