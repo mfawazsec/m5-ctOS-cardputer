@@ -68,7 +68,7 @@ static void keystroke_task(void *arg)
     i2s_pdm_rx_config_t pdm_cfg = {
         .clk_cfg  = I2S_PDM_RX_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
         .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = { .clk = GPIO_NUM_41, .din = GPIO_NUM_40, .invert_flags = { .clk_inv = false } },
+        .gpio_cfg = { .clk = GPIO_NUM_43, .din = GPIO_NUM_46, .invert_flags = { .clk_inv = false } },
     };
     i2s_channel_init_pdm_rx_mode(s_rx_chan, &pdm_cfg);
     i2s_channel_enable(s_rx_chan);
@@ -159,7 +159,7 @@ extern "C" void passive_keystroke_ui_show(void)
         M5.Display.setCursor(0, 50);
         M5.Display.printf("Raw: %lu", (unsigned long)e);
         M5.Display.setCursor(0, 62);
-        M5.Display.print("Mic: SPM1423 PDM (GPIO40/41)");
+        M5.Display.print("Mic: SPM1423 PDM (CLK=43/DIN=46)");
         M5.Display.setCursor(0, 74);
         M5.Display.print("Save: /sdcard/keystrokes/");
 

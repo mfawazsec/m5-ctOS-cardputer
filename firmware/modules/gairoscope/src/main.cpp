@@ -2,7 +2,6 @@
 #include "registry.h"
 #include "loader.h"
 #include "esp_log.h"
-#include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "M5Unified.h"
@@ -23,36 +22,22 @@ static const ctos_api_t *s_api = nullptr;
 #define BIT_SAMPLES      (SAMPLE_RATE * BIT_DURATION_MS / 1000)
 #define PI               3.14159265358979f
 
-static volatile bool    s_transmitting  = false;
+static volatile bool     s_transmitting = false;
 static volatile uint32_t s_bits_sent    = 0;
-static i2s_chan_handle_t s_tx_chan;
-
-static void init_i2s_tx(void)
-{
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
-    i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);
-    i2s_std_config_t std_cfg = {
-        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = { .mclk = I2S_GPIO_UNUSED, .bclk = GPIO_NUM_34,
-                      .ws = GPIO_NUM_33, .dout = GPIO_NUM_35,
-                      .din = I2S_GPIO_UNUSED, .invert_flags = {} },
-    };
-    i2s_channel_init_std_mode(s_tx_chan, &std_cfg);
-    i2s_channel_enable(s_tx_chan);
-}
 
 static void transmit_bit(uint8_t bit)
 {
-    float freq = bit ? FREQ_ONE : FREQ_ZERO;
+    float freq  = bit ? FREQ_ONE : FREQ_ZERO;
     int16_t *buf = (int16_t *)s_api->psram_alloc(BIT_SAMPLES * sizeof(int16_t));
     if (!buf) return;
     for (int i = 0; i < BIT_SAMPLES; i++) {
         float t = (float)i / SAMPLE_RATE;
         buf[i]  = (int16_t)(sinf(2.0f * PI * freq * t) * 24000.0f);
     }
-    size_t written;
-    i2s_channel_write(s_tx_chan, buf, BIT_SAMPLES * sizeof(int16_t), &written, pdMS_TO_TICKS(BIT_DURATION_MS + 50));
+    M5.Speaker.playRaw(buf, BIT_SAMPLES, SAMPLE_RATE, false, 1, 0, true);
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(BIT_DURATION_MS + 100);
+    while (M5.Speaker.isPlaying(0) && (int32_t)(deadline - xTaskGetTickCount()) > 0)
+        vTaskDelay(pdMS_TO_TICKS(1));
     s_api->psram_free(buf);
     s_bits_sent++;
 }
@@ -60,7 +45,7 @@ static void transmit_bit(uint8_t bit)
 static void transmit_message(const char *msg)
 {
     size_t len = strlen(msg);
-    for (int i = 0; i < 8; i++) transmit_bit(i & 1);  // preamble
+    for (int i = 0; i < 8; i++) transmit_bit(i & 1);
     for (int b = 7; b >= 0; b--) transmit_bit(((uint8_t)len >> b) & 1);
     for (size_t i = 0; i < len && module_registry_is_running(ID); i++) {
         for (int b = 7; b >= 0; b--) transmit_bit(((uint8_t)msg[i] >> b) & 1);
@@ -72,7 +57,7 @@ static void transmit_message(const char *msg)
 
 static void gairoscope_task(void *arg)
 {
-    init_i2s_tx();
+    M5.Speaker.setVolume(255);
 
     while (module_registry_is_running(ID)) {
         if (!s_transmitting) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
@@ -82,8 +67,7 @@ static void gairoscope_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
-    i2s_channel_disable(s_tx_chan);
-    i2s_del_channel(s_tx_chan);
+    M5.Speaker.stop(0);
     s_api->log(ID, "Gairoscope stopped");
     module_registry_set_running(ID, false);
     vTaskDelete(NULL);
@@ -92,7 +76,7 @@ static void gairoscope_task(void *arg)
 extern "C" esp_err_t gairoscope_main(const ctos_api_t *api)
 {
     if (module_registry_is_running(ID)) return ESP_OK;
-    s_api         = api;
+    s_api          = api;
     s_transmitting = false;
     s_bits_sent    = 0;
     module_registry_set_running(ID, true);

@@ -70,12 +70,14 @@ void ble_nimble_ensure_started(void)
 {
     static bool s_started = false;
     if (s_started) {
-        while (!s_ble_synced) vTaskDelay(pdMS_TO_TICKS(10));
+        for (int i = 0; i < 500 && !s_ble_synced; i++) vTaskDelay(pdMS_TO_TICKS(10));
+        if (!s_ble_synced) ESP_LOGE("ble", "NimBLE sync timeout (already started)");
         return;
     }
     s_started = true;
     nimble_port_init();
     ble_hs_cfg.sync_cb = on_ble_sync;
     nimble_port_freertos_init(ble_host_task);
-    while (!s_ble_synced) vTaskDelay(pdMS_TO_TICKS(10));
+    for (int i = 0; i < 500 && !s_ble_synced; i++) vTaskDelay(pdMS_TO_TICKS(10));
+    if (!s_ble_synced) ESP_LOGE("ble", "NimBLE sync timeout — BT hardware not ready");
 }

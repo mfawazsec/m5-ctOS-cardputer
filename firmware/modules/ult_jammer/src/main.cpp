@@ -3,7 +3,6 @@
 #include "loader.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "M5Unified.h"
@@ -17,14 +16,12 @@ static const char *ID  = "ult_jammer";
 static const ctos_api_t *s_api = nullptr;
 
 #define SAMPLE_RATE    44100
-#define CHUNK_SAMPLES  (SAMPLE_RATE / 10)
+#define CHUNK_SAMPLES  (SAMPLE_RATE / 10)   // 100ms of noise per chunk
 #define PI             3.14159265358979f
 
 typedef enum { INTENSITY_LOW = 0, INTENSITY_MED, INTENSITY_HIGH } intensity_t;
 static volatile intensity_t s_intensity    = INTENSITY_MED;
 static volatile bool        s_jammer_on    = true;
-
-static i2s_chan_handle_t s_tx_chan;
 
 static void generate_noise_chunk(int16_t *buf, size_t n, int16_t amp)
 {
@@ -41,39 +38,45 @@ static void generate_noise_chunk(int16_t *buf, size_t n, int16_t amp)
 
 static void jammer_task(void *arg)
 {
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
-    i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);
-
-    i2s_std_config_t std_cfg = {
-        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = { .mclk = I2S_GPIO_UNUSED, .bclk = GPIO_NUM_34,
-                      .ws = GPIO_NUM_33, .dout = GPIO_NUM_35,
-                      .din = I2S_GPIO_UNUSED, .invert_flags = {} },
-    };
-    i2s_channel_init_std_mode(s_tx_chan, &std_cfg);
-    i2s_channel_enable(s_tx_chan);
+    static const int16_t amps[]      = { 8000, 16000, 28000 };
+    static const char *level_str[]   = { "LOW", "MED", "HIGH" };
 
     int16_t *buf = (int16_t *)s_api->psram_alloc(CHUNK_SAMPLES * sizeof(int16_t));
-    if (!buf) { s_api->log(ID, "PSRAM alloc failed"); module_registry_set_running(ID, false); vTaskDelete(NULL); return; }
-
-    static const int16_t amps[] = { 8000, 16000, 28000 };
-    static const char *level_str[] = { "LOW", "MED", "HIGH" };
-
-    while (module_registry_is_running(ID)) {
-        if (!s_jammer_on) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
-
-        generate_noise_chunk(buf, CHUNK_SAMPLES, amps[s_intensity]);
-        size_t written;
-        i2s_channel_write(s_tx_chan, buf, CHUNK_SAMPLES * sizeof(int16_t), &written, pdMS_TO_TICKS(500));
-
-        char status[48];
-        snprintf(status, sizeof(status), "Jammer: %s | 18-22kHz", level_str[s_intensity]);
-        s_api->display_print(ID, status);
+    if (!buf) {
+        s_api->log(ID, "PSRAM alloc failed");
+        module_registry_set_running(ID, false);
+        vTaskDelete(NULL);
+        return;
     }
 
-    i2s_channel_disable(s_tx_chan);
-    i2s_del_channel(s_tx_chan);
+    M5.Speaker.setVolume(255);
+
+    intensity_t cur_intensity = (intensity_t)-1;
+    bool cur_on = false;
+
+    while (module_registry_is_running(ID)) {
+        bool intensity_changed = (cur_intensity != s_intensity);
+        bool on_changed        = (cur_on != s_jammer_on);
+
+        if (s_jammer_on && (intensity_changed || (on_changed && !cur_on))) {
+            cur_intensity = s_intensity;
+            cur_on = true;
+            generate_noise_chunk(buf, CHUNK_SAMPLES, amps[cur_intensity]);
+            M5.Speaker.playRaw(buf, CHUNK_SAMPLES, SAMPLE_RATE, false, 0, 0, true);
+        } else if (!s_jammer_on && cur_on) {
+            M5.Speaker.stop(0);
+            cur_on = false;
+        }
+
+        char status[48];
+        snprintf(status, sizeof(status), "Jammer: %s | 18-22kHz",
+                 s_jammer_on ? level_str[s_intensity] : "OFF");
+        s_api->display_print(ID, status);
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    M5.Speaker.stop(0);
     s_api->psram_free(buf);
     s_api->log(ID, "Jammer stopped");
     module_registry_set_running(ID, false);
@@ -83,7 +86,7 @@ static void jammer_task(void *arg)
 extern "C" esp_err_t ult_jammer_main(const ctos_api_t *api)
 {
     if (module_registry_is_running(ID)) return ESP_OK;
-    s_api      = api;
+    s_api       = api;
     s_jammer_on = true;
     module_registry_set_running(ID, true);
     if (xTaskCreate(jammer_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {

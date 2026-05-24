@@ -2,7 +2,6 @@
 #include "registry.h"
 #include "loader.h"
 #include "esp_log.h"
-#include "driver/i2s_std.h"
 #include "driver/i2s_pdm.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,7 +27,6 @@ static volatile float s_last_delta  = 0.0f;
 static volatile int   s_ping_count  = 0;
 static volatile bool  s_recalibrate = false;
 
-static i2s_chan_handle_t s_tx_chan;
 static i2s_chan_handle_t s_rx_chan;
 
 static float iir_filter(float x, float *z)
@@ -49,31 +47,24 @@ static float rms_f(const int16_t *buf, size_t n)
 
 static void sonar_task(void *arg)
 {
-    i2s_chan_config_t tx_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
-    i2s_new_channel(&tx_cfg, &s_tx_chan, NULL);
-    i2s_std_config_t std = {
-        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = { .mclk = I2S_GPIO_UNUSED, .bclk = GPIO_NUM_34,
-                      .ws = GPIO_NUM_33, .dout = GPIO_NUM_35,
-                      .din = I2S_GPIO_UNUSED, .invert_flags = {} },
-    };
-    i2s_channel_init_std_mode(s_tx_chan, &std);
-
+    // RX: PDM mic — CLK=GPIO43, DIN=GPIO46 (corrected for CardputerADV)
     i2s_chan_config_t rx_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     i2s_new_channel(&rx_cfg, NULL, &s_rx_chan);
     i2s_pdm_rx_config_t pdm = {
         .clk_cfg  = I2S_PDM_RX_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
         .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = { .clk = GPIO_NUM_41, .din = GPIO_NUM_40, .invert_flags = { .clk_inv = false } },
+        .gpio_cfg = { .clk = GPIO_NUM_43, .din = GPIO_NUM_46, .invert_flags = { .clk_inv = false } },
     };
     i2s_channel_init_pdm_rx_mode(s_rx_chan, &pdm);
 
-    int16_t ping_buf[PING_SAMPLES];
+    // TX: pre-generate 5ms 20kHz ping for M5.Speaker.playRaw
+    static int16_t s_ping_buf[PING_SAMPLES];
     for (int i = 0; i < PING_SAMPLES; i++) {
-        float t     = (float)i / SAMPLE_RATE;
-        ping_buf[i] = (int16_t)(sinf(2.0f * PI * PING_HZ * t) * 28000.0f);
+        float t       = (float)i / SAMPLE_RATE;
+        s_ping_buf[i] = (int16_t)(sinf(2.0f * PI * PING_HZ * t) * 28000.0f);
     }
+
+    M5.Speaker.setVolume(255);
 
     FILE *log_f = fopen("/sdcard/sonar_echo.bin", "ab");
     if (!log_f) s_api->log(ID, "No SD — logging disabled");
@@ -85,11 +76,12 @@ static void sonar_task(void *arg)
     while (module_registry_is_running(ID)) {
         if (s_recalibrate) { s_baseline = 0; warmup = 0; s_recalibrate = false; }
 
-        i2s_channel_enable(s_tx_chan);
-        size_t written;
-        i2s_channel_write(s_tx_chan, ping_buf, sizeof(ping_buf), &written, pdMS_TO_TICKS(50));
-        i2s_channel_disable(s_tx_chan);
+        // TX: send 20kHz ping through M5.Speaker (owns I2S_NUM_1)
+        M5.Speaker.playRaw(s_ping_buf, PING_SAMPLES, SAMPLE_RATE, false, 1, 0, true);
+        for (int i = 0; i < 20 && M5.Speaker.isPlaying(0); i++)
+            vTaskDelay(pdMS_TO_TICKS(1));
 
+        // RX: capture echo on PDM mic
         i2s_channel_enable(s_rx_chan);
         size_t rbytes;
         i2s_channel_read(s_rx_chan, echo, sizeof(echo), &rbytes, pdMS_TO_TICKS(50));
@@ -117,6 +109,8 @@ static void sonar_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(25));
     }
 
+    i2s_channel_disable(s_rx_chan);
+    i2s_del_channel(s_rx_chan);
     if (log_f) fclose(log_f);
     s_api->log(ID, "Sonar stopped");
     module_registry_set_running(ID, false);

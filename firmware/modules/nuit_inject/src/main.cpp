@@ -2,7 +2,6 @@
 #include "registry.h"
 #include "loader.h"
 #include "esp_log.h"
-#include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "M5Unified.h"
@@ -20,9 +19,8 @@ static const ctos_api_t *s_api = nullptr;
 #define CARRIER_HZ    18500.0f
 #define PI            3.14159265358979f
 
-static i2s_chan_handle_t s_tx_chan;
-static volatile int      s_inject_cmd = -1;  // -1 = none pending
-static volatile bool     s_injecting  = false;
+static volatile int  s_inject_cmd = -1;
+static volatile bool s_injecting  = false;
 
 static const char *s_commands[] = {
     "turn off wifi",
@@ -55,26 +53,17 @@ static void do_inject(int idx)
     snprintf(msg, sizeof(msg), "Injecting: %s", s_commands[idx]);
     s_api->display_print(ID, msg);
 
-    size_t written;
-    i2s_channel_write(s_tx_chan, buf, burst * sizeof(int16_t), &written, pdMS_TO_TICKS(2000));
+    M5.Speaker.playRaw(buf, burst, SAMPLE_RATE, false, 1, 0, true);
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2500);
+    while (M5.Speaker.isPlaying(0) && (int32_t)(deadline - xTaskGetTickCount()) > 0)
+        vTaskDelay(pdMS_TO_TICKS(5));
     s_api->psram_free(buf);
     s_api->display_print(ID, "Injection complete.");
 }
 
 static void nuit_task(void *arg)
 {
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
-    i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);
-    i2s_std_config_t std_cfg = {
-        .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = { .mclk = I2S_GPIO_UNUSED, .bclk = GPIO_NUM_34,
-                      .ws = GPIO_NUM_33, .dout = GPIO_NUM_35,
-                      .din = I2S_GPIO_UNUSED, .invert_flags = {} },
-    };
-    i2s_channel_init_std_mode(s_tx_chan, &std_cfg);
-    i2s_channel_enable(s_tx_chan);
-
+    M5.Speaker.setVolume(255);
     s_api->log(ID, "NUIT ready. Select command from UI.");
 
     while (module_registry_is_running(ID)) {
@@ -88,8 +77,7 @@ static void nuit_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
-    i2s_channel_disable(s_tx_chan);
-    i2s_del_channel(s_tx_chan);
+    M5.Speaker.stop(0);
     s_api->log(ID, "NUIT stopped");
     module_registry_set_running(ID, false);
     vTaskDelete(NULL);
@@ -98,7 +86,7 @@ static void nuit_task(void *arg)
 extern "C" esp_err_t nuit_inject_main(const ctos_api_t *api)
 {
     if (module_registry_is_running(ID)) return ESP_OK;
-    s_api       = api;
+    s_api        = api;
     s_inject_cmd = -1;
     s_injecting  = false;
     module_registry_set_running(ID, true);
