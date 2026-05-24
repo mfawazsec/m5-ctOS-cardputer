@@ -4,6 +4,9 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_psram.h"
+#include "esp_spiffs.h"
+#include "esp_vfs_fat.h"
+#include "wear_levelling.h"
 
 #include "settings/config.h"
 #include "wifi/hotspot.h"
@@ -45,6 +48,38 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[3/9] config_init...");
     config_init();
     ESP_LOGI(TAG, "[3/9] config OK");
+
+    /* ── [3b] Internal storage ───────────────────────────────────────────── */
+    // Mount SPIFFS "storage" partition at /spiffs (general file storage)
+    {
+        esp_vfs_spiffs_conf_t cfg = {
+            .base_path              = "/spiffs",
+            .partition_label        = "storage",
+            .max_files              = 20,
+            .format_if_mount_failed = false,
+        };
+        esp_err_t e = esp_vfs_spiffs_register(&cfg);
+        if (e == ESP_OK)
+            ESP_LOGI(TAG, "[3b] SPIFFS mounted at /spiffs");
+        else
+            ESP_LOGW(TAG, "[3b] SPIFFS mount failed: %s", esp_err_to_name(e));
+    }
+
+    // Mount "modules" FAT partition at /modules
+    {
+        static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+        esp_vfs_fat_mount_config_t fat_cfg = {
+            .format_if_mount_failed = false,
+            .max_files              = 20,
+            .allocation_unit_size   = 0,
+        };
+        esp_err_t e = esp_vfs_fat_spiflash_mount_rw_wl(
+            "/modules", "modules", &fat_cfg, &wl_handle);
+        if (e == ESP_OK)
+            ESP_LOGI(TAG, "[3b] FAT modules partition mounted at /modules");
+        else
+            ESP_LOGW(TAG, "[3b] FAT modules mount failed: %s", esp_err_to_name(e));
+    }
 
     /* ── [4/9] Module registry + loader ─────────────────────────────────── */
     ESP_LOGI(TAG, "[4/9] module_registry_init...");

@@ -11,11 +11,12 @@
 static const char *TAG      = "config";
 static const char *NVS_NS   = "ctos_cfg";
 
-static char s_ssid[33]      = {};
-static char s_pass[64]      = {};
-static char s_autoload[256] = {};
-static bool s_ap_enabled    = true;
-static uint8_t s_brightness = 128;
+static char s_ssid[33]       = {};
+static char s_pass[64]       = {};
+static char s_autoload[256]  = {};
+static char s_pin_plain[8]   = {};
+static bool s_ap_enabled     = true;
+static uint8_t s_brightness  = 128;
 
 static nvs_handle_t s_nvs;
 
@@ -65,7 +66,12 @@ void config_init(void)
     if (nvs_get_str(s_nvs, "autoload", s_autoload, &len) != ESP_OK)
         s_autoload[0] = '\0';
 
-    // Seed default PIN hash if not set (PIN "0000" = sha256 placeholder)
+    // Load plaintext PIN for on-device display (default "0000")
+    len = sizeof(s_pin_plain);
+    if (nvs_get_str(s_nvs, "pin_plain", s_pin_plain, &len) != ESP_OK)
+        strlcpy(s_pin_plain, "0000", sizeof(s_pin_plain));
+
+    // Seed default PIN hash if not set
     size_t pin_len = 0;
     if (nvs_get_blob(s_nvs, "pin_hash", NULL, &pin_len) != ESP_OK) {
         // Store hash of "0000" — user should change on first boot
@@ -139,8 +145,13 @@ void config_set_pin(const char *pin)
     uint8_t hash[32];
     mbedtls_sha256((const unsigned char *)pin, strlen(pin), hash, 0);
     nvs_set_blob(s_nvs, "pin_hash", hash, sizeof(hash));
+    // Keep a plaintext copy for on-device display
+    strlcpy(s_pin_plain, pin, sizeof(s_pin_plain));
+    nvs_set_str(s_nvs, "pin_plain", s_pin_plain);
     nvs_commit(s_nvs);
 }
+
+const char *config_get_pin_display(void) { return s_pin_plain; }
 
 uint8_t config_get_brightness(void) { return s_brightness; }
 

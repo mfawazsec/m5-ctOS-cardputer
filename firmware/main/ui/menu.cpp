@@ -3,6 +3,7 @@
 #include "memory_view.h"
 #include "file_browser.h"
 #include "module_manager.h"
+#include "wifi_config.h"
 #include "wifi/hotspot.h"
 #include "settings/config.h"
 #include "esp_log.h"
@@ -35,15 +36,11 @@ static void handle_key(char key)
         ui_module_manager_show();
         break;
     case 'F': case 'f':
-        ui_file_browser_show("/sdcard");
+        // NULL triggers location picker (SD card / internal flash)
+        ui_file_browser_show(NULL);
         break;
     case 'S': case 's':
-        // Settings handled by web UI; show reminder on screen
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setCursor(0, 0);
-        M5.Display.println("Settings: visit 192.168.4.1");
-        M5.Display.println("Press any key to return.");
-        while (!CardputerKb.isChange()) vTaskDelay(pdMS_TO_TICKS(50));
+        ui_wifi_config_show();
         break;
     case 'W': case 'w':
         if (hotspot_is_running()) {
@@ -69,8 +66,9 @@ void ui_menu_run(void)
 
         if (CardputerKb.isChange() && CardputerKb.isPressed()) {
             auto kb = CardputerKb.getState();
-            if (kb.key.key.opt_key.fn == 0 && kb.key.key.key_data.keys[0] != 0) {
-                handle_key((char)kb.key.key.key_data.keys[0]);
+            char key = (char)kb.key.key.key_data.keys[0];
+            if (key != 0) {
+                handle_key(key);
             }
         }
 

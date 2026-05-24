@@ -60,7 +60,7 @@ void ui_module_manager_show(void)
         auto kb  = CardputerKb.getState();
         char key = (char)kb.key.key.key_data.keys[0];
 
-        if (key == 27) return; // ESC
+        if (key == '`' || key == 27) return; // backtick or ESC
 
         if (kb.key.key.opt_key.fn) {
             if (kb.key.key.key_data.keys[0] == 'i' && s_cursor > 0)

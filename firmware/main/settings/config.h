@@ -16,9 +16,10 @@ void        config_set_wifi_ssid(const char *ssid);
 void        config_set_wifi_password(const char *password);
 void        config_set_wifi_ap_enabled(bool enabled);
 
-// PIN (stored in NVS, never in source)
-bool config_verify_pin(const char *pin);
-void config_set_pin(const char *pin);
+// PIN (hash stored for verification; plaintext stored for on-device display)
+bool        config_verify_pin(const char *pin);
+void        config_set_pin(const char *pin);
+const char *config_get_pin_display(void);
 
 // Display
 uint8_t config_get_brightness(void);

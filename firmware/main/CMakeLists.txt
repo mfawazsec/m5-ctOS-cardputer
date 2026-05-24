@@ -8,6 +8,7 @@ idf_component_register(
         "ui/memory_view.cpp"
         "ui/file_browser.cpp"
         "ui/module_manager.cpp"
+        "ui/wifi_config.cpp"
         "modules/loader.cpp"
         "modules/manifest.cpp"
         "modules/registry.cpp"
@@ -19,6 +20,8 @@ idf_component_register(
         esp_http_server
         nvs_flash
         fatfs
+        wear_levelling
+        spiffs
         sdmmc
         json
         freertos
