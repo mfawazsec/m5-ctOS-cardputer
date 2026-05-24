@@ -2,7 +2,7 @@ PORT ?= /dev/tty.usbserial-*
 BAUD ?= 460800
 MOD  ?=
 
-.PHONY: setup build flash clean module package lint format
+.PHONY: setup build flash flash-only flash-log monitor log clean module package lint format size menuconfig help
 
 setup:
 	@echo "==> Installing ESP-IDF dependencies..."
@@ -17,15 +17,22 @@ build:
 	idf.py build
 
 flash:
-	@echo "==> Flashing to $(PORT)..."
-	idf.py -p $(PORT) -b $(BAUD) flash monitor
+	@echo "==> Building + flashing + monitor (logged)..."
+	./tools/linux-flash/flash.sh all
 
 flash-only:
 	@echo "==> Flash without monitor..."
-	idf.py -p $(PORT) -b $(BAUD) flash
+	./tools/linux-flash/flash.sh flash-only
+
+flash-log:
+	@echo "==> Flash then monitor (with logging)..."
+	./tools/linux-flash/flash.sh flash-log
 
 monitor:
-	idf.py -p $(PORT) monitor
+	./tools/linux-flash/flash.sh monitor
+
+log:
+	./tools/linux-flash/flash.sh log
 
 clean:
 	@echo "==> Cleaning build artifacts..."
@@ -65,10 +72,15 @@ help:
 	@echo "m5-ctOS build targets:"
 	@echo "  make setup              - install dependencies"
 	@echo "  make build              - compile base OS"
-	@echo "  make flash PORT=<port>  - flash to device"
-	@echo "  make monitor            - serial monitor"
+	@echo "  make flash              - build + flash + monitor (logged)"
+	@echo "  make flash-only         - flash only, no monitor"
+	@echo "  make flash-log          - flash + monitor (logged, no build)"
+	@echo "  make monitor            - serial monitor (logged)"
+	@echo "  make log                - alias for monitor"
 	@echo "  make clean              - wipe build artifacts"
 	@echo "  make module MOD=<name>  - build a module"
 	@echo "  make package MOD=<name> - package module as .ctm"
 	@echo "  make lint               - check formatting"
 	@echo "  make format             - auto-format sources"
+	@echo ""
+	@echo "  Logs saved to: tools/linux-flash/logs/"

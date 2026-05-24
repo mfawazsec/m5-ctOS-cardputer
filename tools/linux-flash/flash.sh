@@ -1,19 +1,29 @@
 #!/usr/bin/env bash
-# flash.sh — Auto-detect Cardputer USB port and flash m5-ctOS
+# flash.sh — Auto-detect Cardputer USB port, flash m5-ctOS, and log serial output
 #
 # Usage:
-#   ./tools/linux-flash/flash.sh              # build + flash + monitor
-#   ./tools/linux-flash/flash.sh flash-only   # skip build
-#   ./tools/linux-flash/flash.sh monitor      # monitor only
+#   ./tools/linux-flash/flash.sh              # build + flash + monitor (logged)
+#   ./tools/linux-flash/flash.sh flash-only   # flash only, no monitor
+#   ./tools/linux-flash/flash.sh monitor      # monitor only (logged)
+#   ./tools/linux-flash/flash.sh log          # alias for monitor (logged)
 #   ./tools/linux-flash/flash.sh erase        # erase flash (factory reset)
+#
+# Serial output is always saved to:
+#   tools/linux-flash/logs/serial_YYYY-MM-DD_HH-MM-SS.log
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IDF_PATH="${IDF_PATH:-${HOME}/esp/esp-idf}"
 BAUD="${BAUD:-460800}"
 MODE="${1:-all}"
 
-# ── Source ESP-IDF if not already active ─────────────────────────────────────
+# ── Log directory ──────────────────────────────────────────────────────────────
+LOG_DIR="${SCRIPT_DIR}/logs"
+mkdir -p "${LOG_DIR}"
+LOG_FILE="${LOG_DIR}/serial_$(date '+%Y-%m-%d_%H-%M-%S').log"
+
+# ── Source ESP-IDF if not already active ──────────────────────────────────────
 if ! command -v idf.py &>/dev/null; then
     if [ -f "${IDF_PATH}/export.sh" ]; then
         echo "==> Sourcing ESP-IDF from ${IDF_PATH}..."
@@ -64,10 +74,34 @@ if [ -z "$PORT" ]; then
     exit 1
 fi
 
-echo "==> Using port: ${PORT}"
-echo "==> Baud rate : ${BAUD}"
-echo "==> Mode      : ${MODE}"
+echo "==> Using port : ${PORT}"
+echo "==> Baud rate  : ${BAUD}"
+echo "==> Mode       : ${MODE}"
+echo "==> Log file   : ${LOG_FILE}"
 echo ""
+
+# ── Monitor wrapper: tee output to log file ───────────────────────────────────
+# idf.py monitor uses a PTY that doesn't survive a straight pipe,
+# so we use 'script' (util-linux / bsdutils) which captures a PTY session.
+run_monitor_logged() {
+    local port="$1"
+    echo "==> Starting monitor (Ctrl+] to exit) — logging to:"
+    echo "    ${LOG_FILE}"
+    echo ""
+
+    # 'script' records the PTY; '-q' suppresses the start/end banners so the
+    # log stays clean.  -c runs a single command then exits.
+    if command -v script &>/dev/null; then
+        script -q -c "idf.py -p '${port}' monitor" "${LOG_FILE}"
+    else
+        # Fallback: plain tee (works if monitor writes to stdout)
+        idf.py -p "${port}" monitor 2>&1 | tee "${LOG_FILE}"
+    fi
+
+    echo ""
+    echo "==> Session ended. Log saved to:"
+    echo "    ${LOG_FILE}"
+}
 
 cd "${REPO_ROOT}"
 
@@ -79,8 +113,7 @@ case "$MODE" in
         echo "==> Flashing to ${PORT}..."
         idf.py -p "${PORT}" -b "${BAUD}" flash
         echo ""
-        echo "==> Starting monitor (Ctrl+] to exit)..."
-        idf.py -p "${PORT}" monitor
+        run_monitor_logged "${PORT}"
         ;;
 
     flash-only)
@@ -88,9 +121,15 @@ case "$MODE" in
         idf.py -p "${PORT}" -b "${BAUD}" flash
         ;;
 
-    monitor)
-        echo "==> Monitor on ${PORT} (Ctrl+] to exit)..."
-        idf.py -p "${PORT}" monitor
+    flash-log)
+        echo "==> Flashing to ${PORT} (no build) then monitoring..."
+        idf.py -p "${PORT}" -b "${BAUD}" flash
+        echo ""
+        run_monitor_logged "${PORT}"
+        ;;
+
+    monitor|log)
+        run_monitor_logged "${PORT}"
         ;;
 
     erase)
@@ -106,7 +145,16 @@ case "$MODE" in
         ;;
 
     *)
-        echo "Usage: $0 [all|flash-only|monitor|erase]"
+        echo "Usage: $0 [all|flash-only|flash-log|monitor|log|erase]"
+        echo ""
+        echo "  all        build + flash + monitor (with logging)"
+        echo "  flash-only flash only, no monitor"
+        echo "  flash-log  flash-only + monitor (with logging)"
+        echo "  monitor    monitor only (with logging)"
+        echo "  log        alias for monitor"
+        echo "  erase      erase entire flash"
+        echo ""
+        echo "  Logs are saved to: tools/linux-flash/logs/"
         exit 1
         ;;
 esac
