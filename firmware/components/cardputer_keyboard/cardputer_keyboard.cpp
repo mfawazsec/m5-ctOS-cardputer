@@ -26,10 +26,14 @@
 #define REG_EC         0x03
 #define REG_FIFO       0x04
 
-/* Cardputer keyboard matrix: 7 rows × 7 cols */
+/* Cardputer keyboard matrix: 7 rows × 7 cols
+ * TCA8418 key event codes always use a 10-column stride:
+ *   code = row * 10 + col + 1  (regardless of how many cols are active)
+ * So valid codes for our 7×7 matrix: 1-7, 11-17, 21-27, ..., 61-67 */
 #define KBD_ROWS   7
 #define KBD_COLS   7
-#define KBD_NCODES (KBD_ROWS * KBD_COLS)
+#define KBD_STRIDE 10               /* TCA8418 fixed column stride in keycode formula */
+#define KBD_NCODES (KBD_ROWS * KBD_STRIDE)  /* 70: covers all valid codes */
 
 /* I2C frequency for TCA8418 (400 kHz) */
 #define KBD_FREQ   400000
@@ -37,34 +41,36 @@
 static const char *TAG = "kbd";
 
 /* ─── Cardputer QWERTY keymap ───────────────────────────────────────────── */
-/* Index = TCA8418 keycode - 1  (keycodes are 1-based, row-major).
+/* Index = TCA8418 keycode - 1.
+ * TCA8418 key code = row * 10 + col + 1 (fixed 10-col stride).
+ * Each row occupies 10 slots; cols 7-9 are unused (0).
  *
- *  Row 0 (codes  1– 7): `  1  2  3  4  5  6
- *  Row 1 (codes  8–14): q  w  e  r  t  y  u
- *  Row 2 (codes 15–21): a  s  d  f  g  h  i     ← 'i' = Fn+up arrow proxy
- *  Row 3 (codes 22–28): z  x  c  v  b  n  j     ← 'j' = unused / left?
- *  Row 4 (codes 29–35): Fn Spc k  l  ,  .  /    ← 'k'=Fn+down, code29=Fn
- *  Row 5 (codes 36–42): Ctrl Alt o  p  ;  '  Ent
- *  Row 6 (codes 43–49): Shift Del m  ←  ↓  ↑  →
+ *  Row 0 (codes  1–10):  `  1  2  3  4  5  6  [0  0  0]
+ *  Row 1 (codes 11–20):  q  w  e  r  t  y  u  [0  0  0]
+ *  Row 2 (codes 21–30):  a  s  d  f  g  h  i  [0  0  0]
+ *  Row 3 (codes 31–40):  z  x  c  v  b  n  j  [0  0  0]
+ *  Row 4 (codes 41–50):  Fn Spc k  l  ,  .  / [0  0  0]  ← code41=Fn
+ *  Row 5 (codes 51–60):  Ctrl Alt o  p  ;  '  Ent [0 0 0]
+ *  Row 6 (codes 61–70):  Shift Del m  ←  ↓  ↑  → [0 0 0]
  */
 static const char s_keymap_normal[KBD_NCODES] = {
- /* row0 */ '`','1','2','3','4','5','6',
- /* row1 */ 'q','w','e','r','t','y','u',
- /* row2 */ 'a','s','d','f','g','h','i',
- /* row3 */ 'z','x','c','v','b','n','j',
- /* row4 */  0 ,' ','k','l',',','.','/',
- /* row5 */  0 , 0 ,'o','p',';','\'','\n',
- /* row6 */  0 ,127,'m', 0 , 0 , 0 , 0
+ /* row0: 1-10  */ '`','1','2','3','4','5','6', 0, 0, 0,
+ /* row1: 11-20 */ 'q','w','e','r','t','y','u', 0, 0, 0,
+ /* row2: 21-30 */ 'a','s','d','f','g','h','i', 0, 0, 0,
+ /* row3: 31-40 */ 'z','x','c','v','b','n','j', 0, 0, 0,
+ /* row4: 41-50 */  0 ,' ','k','l',',','.','/', 0, 0, 0,
+ /* row5: 51-60 */  0 , 0 ,'o','p',';','\'','\n',0,0, 0,
+ /* row6: 61-70 */  0 ,127,'m', 0 , 0 , 0 , 0 , 0, 0, 0,
 };
 
 static const char s_keymap_fn[KBD_NCODES] = {
- /* row0 */ '~','!','@','#','$','%','^',
- /* row1 */ 'Q','W','E','R','T','Y','U',
- /* row2 */ 'A','S','D','F','G','H','i',   /* FN+H → up  */
- /* row3 */ 'Z','X','C','V','B','N','j',
- /* row4 */  0 ,' ','k','l','<','>','?',   /* FN+K → left, FN+L → right */
- /* row5 */  0 , 0 ,'O','P',':','"','\n',
- /* row6 */  0 ,127,'M', 0 , 0 , 0 , 0
+ /* row0: 1-10  */ '~','!','@','#','$','%','^', 0, 0, 0,
+ /* row1: 11-20 */ 'Q','W','E','R','T','Y','U', 0, 0, 0,
+ /* row2: 21-30 */ 'A','S','D','F','G','H','i', 0, 0, 0,  /* FN+H → up  */
+ /* row3: 31-40 */ 'Z','X','C','V','B','N','j', 0, 0, 0,
+ /* row4: 41-50 */  0 ,' ','k','l','<','>','?', 0, 0, 0,  /* FN+K/L = arrows */
+ /* row5: 51-60 */  0 , 0 ,'O','P',':','"','\n',0, 0, 0,
+ /* row6: 61-70 */  0 ,127,'M', 0 , 0 , 0 , 0 , 0, 0, 0,
 };
 
 /* ─── driver state ──────────────────────────────────────────────────────── */
@@ -125,10 +131,10 @@ bool cardputer_kb_init(void)
      * KP_GPIO1 0x1D: bits[6:0] = rows R0-R6 → keypad
      * KP_GPIO2 0x1E: bits[7:2] = cols C0-C5 → keypad (R8/R9 stay GPIO)
      * KP_GPIO3 0x1F: bit[0]    = col  C6    → keypad */
-    tca_write(REG_CFG, 0x01);          /* AI=1 (auto-increment) */
-    tca_write(0x1D, 0x7F);             /* KP_GPIO1: R0-R6 as keypad */
-    tca_write(0x1E, 0xFC);             /* KP_GPIO2: C0-C5 as keypad */
-    tca_write(0x1F, 0x01);             /* KP_GPIO3: C6 as keypad */
+    tca_write(REG_CFG, 0x01);          /* KE_IEN: key-event interrupt enable */
+    tca_write(0x1D, 0x7F);             /* KP_GPIO1: R0-R6 as keypad rows */
+    tca_write(0x1E, 0x7F);             /* KP_GPIO2: C0-C6 as keypad cols */
+    tca_write(0x1F, 0x00);             /* KP_GPIO3: C8/C9 unused */
 
     /* Clear any stale events and interrupt flags */
     tca_write(REG_INT_ST, 0x1F);
@@ -181,10 +187,10 @@ void cardputer_kb_update(void)
     /* Clear interrupt flags */
     tca_write(REG_INT_ST, 0x1F);
 
-    /* Fn key = code 29 (row 4, col 0) */
+    /* Fn key = row 4, col 0 → code = 4*10 + 0 + 1 = 41 */
     s_kbd.fn_held = false;
     for (int i = 0; i < 6; i++) {
-        if (s_kbd.pressed_codes[i] == 29) { s_kbd.fn_held = true; break; }
+        if (s_kbd.pressed_codes[i] == 41) { s_kbd.fn_held = true; break; }
     }
 
     /* Rebuild key state */
@@ -195,7 +201,7 @@ void cardputer_kb_update(void)
     int out_idx = 0;
     for (int i = 0; i < 6 && out_idx < 6; i++) {
         uint8_t code = s_kbd.pressed_codes[i];
-        if (code == 0 || code == 29) continue; /* skip no-key and Fn itself */
+        if (code == 0 || code == 41) continue; /* skip no-key and Fn itself */
         char ch = (code - 1 < KBD_NCODES) ? map[code - 1] : 0;
         if (ch) s_kbd.state.key.key.key_data.keys[out_idx++] = (uint8_t)ch;
     }
