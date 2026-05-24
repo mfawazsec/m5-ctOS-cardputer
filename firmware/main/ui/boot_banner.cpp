@@ -41,7 +41,7 @@ static constexpr int ART_LINES = sizeof(ART) / sizeof(ART[0]);
 
 static const char SUBTITLE[] = "ESP32-S3  \xb7  M5Stack Cardputer ADV";
 static const char VERSION[]  = "v2.0";
-static const char HINT[]     = "[ press any key ]";
+static const char HINT[]     = "[ starting... ]";
 
 /* ── Helper: draw a centred string at given y ─────────────────────────────── */
 static void draw_centred(const char *str, int y, uint16_t color)
@@ -102,5 +102,5 @@ void boot_banner_show(void)
     /* Visible for ~1.5 s — short enough not to feel sluggish,
      * long enough to read the logo.  Yield to RTOS rather than
      * busy-waiting so other tasks (esp. watchdog) keep running. */
-    vTaskDelay(pdMS_TO_TICKS(1500));
+    vTaskDelay(pdMS_TO_TICKS(400));
 }

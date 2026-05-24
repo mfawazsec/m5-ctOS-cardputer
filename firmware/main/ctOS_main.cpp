@@ -165,15 +165,19 @@ extern "C" void app_main(void)
     memory_view_init();
     ESP_LOGI(TAG, "[7/9] memory view OK");
 
-    /* ── [8/9] WiFi AP ───────────────────────────────────────────────────── */
+    /* ── [8/9] WiFi AP (background task — must not block main thread) ─────── */
     ESP_LOGI(TAG, "[8/9] wifi AP check (enabled=%d)...",
              config_get_wifi_ap_enabled());
     if (config_get_wifi_ap_enabled()) {
-        ESP_LOGI(TAG, "[8/9] hotspot_start...");
-        hotspot_start();
-        ESP_LOGI(TAG, "[8/9] webserver_start...");
-        webserver_start();
-        ESP_LOGI(TAG, "[8/9] WiFi AP OK");
+        xTaskCreate([](void *) {
+            ESP_LOGI("ctOS", "[8/9] hotspot_start (bg)...");
+            hotspot_start();
+            ESP_LOGI("ctOS", "[8/9] webserver_start (bg)...");
+            webserver_start();
+            ESP_LOGI("ctOS", "[8/9] WiFi AP OK");
+            vTaskDelete(NULL);
+        }, "wifi_init", 4096, NULL, 5, NULL);
+        ESP_LOGI(TAG, "[8/9] WiFi AP task spawned");
     } else {
         ESP_LOGI(TAG, "[8/9] WiFi AP disabled — skipped");
     }
