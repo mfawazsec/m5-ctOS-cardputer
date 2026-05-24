@@ -5,8 +5,9 @@
 #include "M5Unified.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cardputer_keyboard.h"
 
-static const char *TAG     = "mod_mgr";
+
 static int         s_cursor = 0;
 
 static void render(void)
@@ -48,22 +49,23 @@ void ui_module_manager_show(void)
 
     while (true) {
         M5.update();
+        CardputerKb.update();
         render();
 
-        if (!M5.Keyboard.isChange() || !M5.Keyboard.isPressed()) {
+        if (!CardputerKb.isChange() || !CardputerKb.isPressed()) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-        auto kb  = M5.Keyboard.getState();
-        char key = (char)kb.key.key_data.keys[0];
+        auto kb  = CardputerKb.getState();
+        char key = (char)kb.key.key.key_data.keys[0];
 
         if (key == 27) return; // ESC
 
-        if (kb.key.opt_key.fn) {
-            if (kb.key.key_data.keys[0] == 'i' && s_cursor > 0)
+        if (kb.key.key.opt_key.fn) {
+            if (kb.key.key.key_data.keys[0] == 'i' && s_cursor > 0)
                 s_cursor--;
-            else if (kb.key.key_data.keys[0] == 'k' && s_cursor < count - 1)
+            else if (kb.key.key.key_data.keys[0] == 'k' && s_cursor < count - 1)
                 s_cursor++;
         } else if (key == '\n' || key == '\r') {
             module_info_t info;

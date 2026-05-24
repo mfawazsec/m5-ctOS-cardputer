@@ -8,6 +8,7 @@
 #include "M5Unified.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cardputer_keyboard.h"
 
 static const char *TAG = "menu";
 
@@ -19,7 +20,7 @@ void ui_menu_init(void)
     M5.Display.setBrightness(config_get_brightness());
     M5.Display.setTextSize(1);
     ESP_LOGI(TAG, "Display init: %dx%d",
-             M5.Display.width(), M5.Display.height());
+             (int)M5.Display.width(), (int)M5.Display.height());
 }
 
 // Key character → action mapping (Cardputer QWERTY keyboard)
@@ -38,7 +39,7 @@ static void handle_key(char key)
         M5.Display.setCursor(0, 0);
         M5.Display.println("Settings: visit 192.168.4.1");
         M5.Display.println("Press any key to return.");
-        while (!M5.Keyboard.isChange()) vTaskDelay(pdMS_TO_TICKS(50));
+        while (!CardputerKb.isChange()) vTaskDelay(pdMS_TO_TICKS(50));
         break;
     case 'W': case 'w':
         if (hotspot_is_running()) {
@@ -58,13 +59,14 @@ void ui_menu_run(void)
 
     while (true) {
         M5.update();
+        CardputerKb.update();
 
         memory_view_render();
 
-        if (M5.Keyboard.isChange() && M5.Keyboard.isPressed()) {
-            auto kb = M5.Keyboard.getState();
-            if (kb.key.opt_key.fn == 0 && kb.key.key_data.keys[0] != 0) {
-                handle_key((char)kb.key.key_data.keys[0]);
+        if (CardputerKb.isChange() && CardputerKb.isPressed()) {
+            auto kb = CardputerKb.getState();
+            if (kb.key.key.opt_key.fn == 0 && kb.key.key.key_data.keys[0] != 0) {
+                handle_key((char)kb.key.key.key_data.keys[0]);
             }
         }
 

@@ -18,13 +18,17 @@ static const char *TAG = "loader";
 // ctOS IPC API implementation provided to modules
 static void api_log(const char *id, const char *msg)
 {
-    ESP_LOGI("mod/%s", "%s", id, msg);
+    char tag[48];
+    snprintf(tag, sizeof(tag), "mod/%s", id);
+    ESP_LOGI(tag, "%s", msg);
 }
 
 static void api_display_print(const char *id, const char *line)
 {
     // Delegate to memory_view overlay
-    ESP_LOGI("mod/%s", "DISP: %s", id, line);
+    char tag[48];
+    snprintf(tag, sizeof(tag), "mod/%s", id);
+    ESP_LOGI(tag, "DISP: %s", line);
 }
 
 static void api_display_clear(const char *id)

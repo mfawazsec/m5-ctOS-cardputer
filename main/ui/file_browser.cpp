@@ -7,6 +7,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "cardputer_keyboard.h"
 
 static const char *TAG = "file_browser";
 
@@ -46,7 +47,7 @@ static void load_dir(const char *path)
         s_entries[s_entry_count].size   = 0;
 
         if (!s_entries[s_entry_count].is_dir) {
-            char full[256];
+            char full[384];
             snprintf(full, sizeof(full), "%s/%s", path, ent->d_name);
             struct stat st;
             if (stat(full, &st) == 0)
@@ -87,9 +88,16 @@ static void render(const char *path)
     M5.Display.print("[UP/DN] nav  [OK] open  [DEL] delete  [ESC] back");
 }
 
+/* Suppress GCC's conservative format-truncation false-positives.
+ * path_stack entries are bounded by actual SD-card path lengths (<128 chars),
+ * so path+"/"+name (max ~192 chars) fits comfortably in the 512-byte buffers.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+
 void ui_file_browser_show(const char *root_path)
 {
-    char path_stack[8][128];
+    char path_stack[8][512];
     int  depth = 0;
     strlcpy(path_stack[0], root_path, sizeof(path_stack[0]));
 
@@ -97,25 +105,26 @@ void ui_file_browser_show(const char *root_path)
 
     while (true) {
         M5.update();
+        CardputerKb.update();
         render(path_stack[depth]);
 
-        if (!M5.Keyboard.isChange() || !M5.Keyboard.isPressed()) {
+        if (!CardputerKb.isChange() || !CardputerKb.isPressed()) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-        auto kb = M5.Keyboard.getState();
-        char key = (char)kb.key.key_data.keys[0];
+        auto kb = CardputerKb.getState();
+        char key = (char)kb.key.key.key_data.keys[0];
 
         if (key == 0) {
             // Arrow keys via special codes
-            if (kb.key.opt_key.fn) {
-                if (kb.key.key_data.keys[0] == 'i') { // up
+            if (kb.key.key.opt_key.fn) {
+                if (kb.key.key.key_data.keys[0] == 'i') { // up
                     if (s_cursor > 0) {
                         s_cursor--;
                         if (s_cursor < s_scroll) s_scroll = s_cursor;
                     }
-                } else if (kb.key.key_data.keys[0] == 'k') { // down
+                } else if (kb.key.key.key_data.keys[0] == 'k') { // down
                     if (s_cursor < s_entry_count - 1) {
                         s_cursor++;
                         int visible = (M5.Display.height() - 14) / LINE_HEIGHT;
@@ -129,15 +138,17 @@ void ui_file_browser_show(const char *root_path)
             if (s_cursor < s_entry_count && s_entries[s_cursor].is_dir
                 && depth < 7) {
                 depth++;
-                snprintf(path_stack[depth], sizeof(path_stack[depth]),
-                         "%s/%s", path_stack[depth - 1],
+                char tmp[512];
+                snprintf(tmp, sizeof(tmp), "%s/%s",
+                         path_stack[depth - 1],
                          s_entries[s_cursor].name);
+                strlcpy(path_stack[depth], tmp, sizeof(path_stack[depth]));
                 load_dir(path_stack[depth]);
             }
         } else if (key == 127 || key == 8) {
             // Delete selected file
             if (s_cursor < s_entry_count && !s_entries[s_cursor].is_dir) {
-                char full[256];
+                char full[512];
                 snprintf(full, sizeof(full), "%s/%s",
                          path_stack[depth], s_entries[s_cursor].name);
                 remove(full);
@@ -156,3 +167,5 @@ void ui_file_browser_show(const char *root_path)
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }
+
+#pragma GCC diagnostic pop

@@ -27,9 +27,18 @@ void hotspot_start(void)
 {
     if (s_running) return;
 
-    esp_netif_init();
-    esp_event_loop_create_default();
-    esp_netif_create_default_wifi_ap();
+    // esp_netif_init and esp_event_loop_create_default must only be called once
+    static bool s_netif_init = false;
+    if (!s_netif_init) {
+        ESP_ERROR_CHECK(esp_netif_init());
+        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        s_netif_init = true;
+    }
+
+    static esp_netif_t *s_ap_netif = nullptr;
+    if (!s_ap_netif) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+    }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_wifi_init(&cfg);

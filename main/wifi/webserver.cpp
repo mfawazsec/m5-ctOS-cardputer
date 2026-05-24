@@ -37,7 +37,7 @@ static esp_err_t handle_root(httpd_req_t *req)
 
     char body[1024];
     size_t free_heap  = esp_get_free_heap_size();
-    size_t free_psram = esp_psram_is_initialized() ? esp_psram_get_free_size() : 0;
+    size_t free_psram = esp_psram_is_initialized() ? heap_caps_get_free_size(MALLOC_CAP_SPIRAM) : 0;
     int    mod_count  = module_registry_count();
 
     snprintf(body, sizeof(body),

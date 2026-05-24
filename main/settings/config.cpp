@@ -2,7 +2,9 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
-#include "esp_wifi.h"
+#include "esp_mac.h"
+#include "esp_system.h"
+#include "mbedtls/sha256.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -25,9 +27,9 @@ void config_init(void)
         return;
     }
 
-    // Build default SSID from MAC
+    // Build default SSID from WiFi AP MAC (readable before WiFi driver init)
     uint8_t mac[6];
-    esp_wifi_get_mac(WIFI_IF_AP, mac);
+    esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
     char default_ssid[33];
     snprintf(default_ssid, sizeof(default_ssid), "ctOS-%02X%02X%02X",
              mac[3], mac[4], mac[5]);
@@ -99,9 +101,6 @@ void config_set_wifi_ap_enabled(bool enabled)
 bool config_verify_pin(const char *pin)
 {
     // Compute SHA-256 of supplied PIN and compare against stored hash
-    // mbedTLS is available via ESP-IDF
-    extern void mbedtls_sha256(const unsigned char *input, size_t ilen,
-                                unsigned char *output, int is224);
     uint8_t hash[32];
     mbedtls_sha256((const unsigned char *)pin, strlen(pin), hash, 0);
 
@@ -113,8 +112,6 @@ bool config_verify_pin(const char *pin)
 
 void config_set_pin(const char *pin)
 {
-    extern void mbedtls_sha256(const unsigned char *input, size_t ilen,
-                                unsigned char *output, int is224);
     uint8_t hash[32];
     mbedtls_sha256((const unsigned char *)pin, strlen(pin), hash, 0);
     nvs_set_blob(s_nvs, "pin_hash", hash, sizeof(hash));

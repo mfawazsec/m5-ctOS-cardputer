@@ -7,6 +7,10 @@ sdkconfig
 *.bin
 *.hex
 
+# IDF Component Manager (auto-downloaded, do not commit)
+managed_components/
+dependencies.lock
+
 # PlatformIO
 .pio/
 .pioenvs/

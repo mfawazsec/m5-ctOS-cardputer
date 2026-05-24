@@ -12,6 +12,7 @@
 #include "ui/memory_view.h"
 #include "modules/registry.h"
 #include "modules/loader.h"
+#include "cardputer_keyboard.h"
 
 static const char *TAG = "ctOS";
 
@@ -34,7 +35,8 @@ extern "C" void app_main(void)
     module_registry_init();
     module_loader_init();
 
-    ui_menu_init();
+    ui_menu_init();          // initialises M5 / Display (calls M5.begin)
+    CardputerKb.init();      // initialise TCA8418 keyboard (after M5.begin)
     memory_view_init();
 
     if (config_get_wifi_ap_enabled()) {

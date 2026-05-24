@@ -22,4 +22,6 @@ idf_component_register(
         json
         freertos
         esp_psram
+        cardputer_keyboard
+        mbedtls
 )
