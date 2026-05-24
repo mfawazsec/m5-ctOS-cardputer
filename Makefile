@@ -34,6 +34,18 @@ monitor:
 log:
 	./tools/linux-flash/flash.sh log
 
+qa:
+	@echo "==> Running QA pipeline (3 agents)..."
+	python3 tools/qa.py
+
+qa-fast:
+	@echo "==> Running QA pipeline (fast mode)..."
+	python3 tools/qa.py --fast
+
+test:
+	@echo "==> Running host boot tests..."
+	$(MAKE) -C tests/host
+
 clean:
 	@echo "==> Cleaning build artifacts..."
 	idf.py fullclean
