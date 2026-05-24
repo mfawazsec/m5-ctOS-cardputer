@@ -1,4 +1,5 @@
 #include "menu.h"
+#include "boot_banner.h"
 #include "memory_view.h"
 #include "file_browser.h"
 #include "module_manager.h"
@@ -21,6 +22,9 @@ void ui_menu_init(void)
     M5.Display.setTextSize(1);
     ESP_LOGI(TAG, "Display init: %dx%d",
              (int)M5.Display.width(), (int)M5.Display.height());
+
+    /* Show boot splash immediately after display is ready */
+    boot_banner_show();
 }
 
 // Key character → action mapping (Cardputer QWERTY keyboard)

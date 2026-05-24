@@ -4,6 +4,7 @@ idf_component_register(
         "wifi/hotspot.cpp"
         "wifi/webserver.cpp"
         "ui/menu.cpp"
+        "ui/boot_banner.cpp"
         "ui/memory_view.cpp"
         "ui/file_browser.cpp"
         "ui/module_manager.cpp"
