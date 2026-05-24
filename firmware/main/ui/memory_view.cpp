@@ -14,9 +14,9 @@ static const char *TAG = "memory_view";
 // Off-screen sprite to avoid flicker
 static M5Canvas *s_canvas = nullptr;
 
-/* textSize 2 → 12×16 px per glyph; screen 240×135 → 20 cols, 8 rows */
-static constexpr int TS   = 2;
-static constexpr int LINEH = 16; /* pixels per line at textSize 2 */
+/* textSize 1.5 → 9×12 px per glyph; screen 240×135 → 26 cols, 11 rows */
+static constexpr float TS  = 1.5f;
+static constexpr int LINEH = 12;
 
 void memory_view_init(void)
 {
@@ -71,7 +71,7 @@ void memory_view_render(void)
     /* ── Footer shortcuts ── */
     s_canvas->setTextColor(TFT_DARKGREY, TFT_BLACK);
     s_canvas->setCursor(0, M5.Display.height() - LINEH);
-    s_canvas->print("[M]od [F]ile [S]et [W]ifi");
+    s_canvas->print("[M]ods [F]iles [S]et [W]ifi");
 
     s_canvas->pushSprite(0, 0);
 }
