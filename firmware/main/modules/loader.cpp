@@ -103,7 +103,9 @@ static esp_err_t api_send_msg(const char *id, ctos_msg_t *msg)
 
 static void *api_psram_alloc(size_t size)
 {
-    return heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p) p = heap_caps_malloc(size, MALLOC_CAP_DEFAULT);  // fallback if no PSRAM
+    return p;
 }
 
 static void api_psram_free(void *ptr)

@@ -75,7 +75,7 @@ extern "C" void app_main(void)
             .base_path              = "/spiffs",
             .partition_label        = "storage",
             .max_files              = 20,
-            .format_if_mount_failed = false,
+            .format_if_mount_failed = true,
         };
         esp_err_t e = esp_vfs_spiffs_register(&cfg);
         if (e == ESP_OK)
@@ -88,7 +88,7 @@ extern "C" void app_main(void)
     {
         static wl_handle_t wl_handle = WL_INVALID_HANDLE;
         esp_vfs_fat_mount_config_t fat_cfg = {
-            .format_if_mount_failed = false,
+            .format_if_mount_failed = true,
             .max_files              = 20,
             .allocation_unit_size   = 0,
         };
@@ -112,7 +112,9 @@ extern "C" void app_main(void)
     ui_menu_init();
     ESP_LOGI(TAG, "[5/9] display OK");
 
-    /* ── [5b] SD card (SPI2_HOST: SCK=40, MOSI=14, MISO=39, CS=12) ──────── */
+    /* ── [5b] SD card (after M5.begin — M5GFX owns SPI2_HOST during autodetect) */
+    /* LFN uses stack (CONFIG_FATFS_LFN_STACK) so no heap alloc needed here.     */
+    /* SPI2_HOST: SCK=GPIO40, MOSI=GPIO14, MISO=GPIO39, CS=GPIO12                */
     {
         static sdmmc_card_t *s_sd_card = nullptr;
         spi_bus_config_t spi_bus = {
@@ -132,13 +134,12 @@ extern "C" void app_main(void)
             dev_cfg.gpio_cs               = GPIO_NUM_12;
             esp_vfs_fat_sdmmc_mount_config_t fat_mnt = {
                 .format_if_mount_failed = false,
-                .max_files              = 20,
-                .allocation_unit_size   = 16384,
+                .max_files              = 8,
+                .allocation_unit_size   = 0,
             };
             e = esp_vfs_fat_sdspi_mount("/sdcard", &host, &dev_cfg, &fat_mnt, &s_sd_card);
             if (e == ESP_OK) {
-                ESP_LOGI(TAG, "[5b] SD card mounted at /sdcard (%llu MB)",
-                         ((uint64_t)s_sd_card->csd.capacity * s_sd_card->csd.sector_size) >> 20);
+                ESP_LOGI(TAG, "[5b] SD card mounted at /sdcard");
                 mkdir("/sdcard/payloads",    0755);
                 mkdir("/sdcard/keystrokes",  0755);
                 mkdir("/sdcard/csi",         0755);
