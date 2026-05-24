@@ -73,9 +73,37 @@ static const ctos_api_t s_api = {
     .get_free_heap  = api_get_free_heap,
 };
 
+/* Scan a directory for <id>/manifest.json subdirs and register each. */
+static void scan_module_dir(const char *base)
+{
+    DIR *d = opendir(base);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d))) {
+        if (ent->d_name[0] == '.') continue;
+        char path[384];
+        snprintf(path, sizeof(path), "%s/%s", base, ent->d_name);
+        char mfst[512];
+        snprintf(mfst, sizeof(mfst), "%s/manifest.json", path);
+        FILE *f = fopen(mfst, "r");
+        if (!f) continue;
+        fclose(f);
+        esp_err_t e = module_loader_install(path);
+        if (e == ESP_OK)
+            ESP_LOGI(TAG, "Auto-registered module from %s", path);
+        else
+            ESP_LOGW(TAG, "Failed to register %s: %s", path, esp_err_to_name(e));
+    }
+    closedir(d);
+}
+
 void module_loader_init(void)
 {
-    ESP_LOGI(TAG, "Module loader ready");
+    scan_module_dir("/modules");      // internal FAT partition
+    scan_module_dir("/sdcard/modules"); // SD card
+    ESP_LOGI(TAG, "Module loader ready — %d module(s) registered",
+             module_registry_count());
 }
 
 esp_err_t module_loader_install(const char *ctm_path)
