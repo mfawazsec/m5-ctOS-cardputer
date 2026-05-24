@@ -112,11 +112,16 @@ bool cardputer_kb_init(void)
         return false;
     }
 
-    /* Configure: enable key-event FIFO; 7×7 matrix */
-    tca_write(REG_CFG, 0x01);          /* KE_IEN – key event interrupt enable */
-    tca_write(0x1A, 0x7F);             /* KP_GPIO1: rows 0-6 → keypad */
-    tca_write(0x1B, 0x7F);             /* KP_GPIO2: cols 0-6 → keypad */
-    tca_write(0x1C, 0x00);
+    /* Configure: enable key-event FIFO; 7×7 matrix.
+     * After reset all TCA8418 pins are GPIOs — we must write KP_GPIO
+     * registers (0x1D-0x1F) to activate the keypad matrix.
+     * KP_GPIO1 0x1D: bits[6:0] = rows R0-R6 → keypad
+     * KP_GPIO2 0x1E: bits[7:2] = cols C0-C5 → keypad (R8/R9 stay GPIO)
+     * KP_GPIO3 0x1F: bit[0]    = col  C6    → keypad */
+    tca_write(REG_CFG, 0x01);          /* AI=1 (auto-increment) */
+    tca_write(0x1D, 0x7F);             /* KP_GPIO1: R0-R6 as keypad */
+    tca_write(0x1E, 0xFC);             /* KP_GPIO2: C0-C5 as keypad */
+    tca_write(0x1F, 0x01);             /* KP_GPIO3: C6 as keypad */
 
     /* Clear any stale events and interrupt flags */
     tca_write(REG_INT_ST, 0x1F);
