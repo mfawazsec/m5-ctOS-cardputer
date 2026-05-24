@@ -12,9 +12,6 @@
 static const char *TAG = "webserver";
 static httpd_handle_t s_server = NULL;
 
-// Session tokens — simple per-connection auth flag stored in socket context
-static bool s_session_auth[CONFIG_LWIP_MAX_SOCKETS] = {};
-
 static bool is_authed(httpd_req_t *req)
 {
     // Check cookie "ctos_auth=<token>"

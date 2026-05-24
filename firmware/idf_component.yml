@@ -8,5 +8,3 @@ dependencies:
     version: "*"
   espressif/cjson:
     version: "*"
-  nimble:
-    version: "*"

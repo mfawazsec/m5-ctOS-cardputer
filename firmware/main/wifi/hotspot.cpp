@@ -40,8 +40,12 @@ void hotspot_start(void)
         s_ap_netif = esp_netif_create_default_wifi_ap();
     }
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&cfg);
+    static bool s_wifi_init = false;
+    if (!s_wifi_init) {
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        esp_wifi_init(&cfg);
+        s_wifi_init = true;
+    }
 
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                 wifi_event_handler, NULL);

@@ -2,6 +2,7 @@
 #include "registry.h"
 #include "manifest.h"
 #include "module_api.h"
+#include "module_log.h"
 #include "settings/config.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -15,17 +16,75 @@
 
 static const char *TAG = "loader";
 
-// ctOS IPC API implementation provided to modules
+// ---------------------------------------------------------------------------
+// Forward declarations for all statically-compiled module entry points
+// ---------------------------------------------------------------------------
+extern "C" {
+esp_err_t badusb_main(const ctos_api_t *api);
+esp_err_t ble_hid_inject_main(const ctos_api_t *api);
+esp_err_t blerp_main(const ctos_api_t *api);
+esp_err_t espnow_c2_main(const ctos_api_t *api);
+esp_err_t gairoscope_main(const ctos_api_t *api);
+esp_err_t ir_dazzle_main(const ctos_api_t *api);
+esp_err_t nuit_inject_main(const ctos_api_t *api);
+esp_err_t passive_keystroke_main(const ctos_api_t *api);
+esp_err_t passive_wifi_csi_main(const ctos_api_t *api);
+esp_err_t sonar_snoop_main(const ctos_api_t *api);
+esp_err_t ult_jammer_main(const ctos_api_t *api);
+esp_err_t wiki_eve_main(const ctos_api_t *api);
+
+void badusb_ui_show(void);
+void ble_hid_inject_ui_show(void);
+void blerp_ui_show(void);
+void espnow_c2_ui_show(void);
+void gairoscope_ui_show(void);
+void ir_dazzle_ui_show(void);
+void nuit_inject_ui_show(void);
+void passive_keystroke_ui_show(void);
+void passive_wifi_csi_ui_show(void);
+void sonar_snoop_ui_show(void);
+void ult_jammer_ui_show(void);
+void wiki_eve_ui_show(void);
+}
+
+// ---------------------------------------------------------------------------
+// Builtin run_fn / ui_fn table
+// ---------------------------------------------------------------------------
+typedef struct {
+    const char      *id;
+    module_main_fn_t run_fn;
+    module_ui_fn_t   ui_fn;
+} builtin_entry_t;
+
+static const builtin_entry_t s_builtin_fns[] = {
+    { "badusb",           badusb_main,           badusb_ui_show           },
+    { "ble_hid_inject",   ble_hid_inject_main,   ble_hid_inject_ui_show   },
+    { "blerp",            blerp_main,             blerp_ui_show            },
+    { "espnow_c2",        espnow_c2_main,         espnow_c2_ui_show        },
+    { "gairoscope",       gairoscope_main,        gairoscope_ui_show       },
+    { "ir_dazzle",        ir_dazzle_main,         ir_dazzle_ui_show        },
+    { "nuit_inject",      nuit_inject_main,       nuit_inject_ui_show      },
+    { "passive_keystroke",passive_keystroke_main, passive_keystroke_ui_show},
+    { "passive_wifi_csi", passive_wifi_csi_main,  passive_wifi_csi_ui_show },
+    { "sonar_snoop",      sonar_snoop_main,       sonar_snoop_ui_show      },
+    { "ult_jammer",       ult_jammer_main,        ult_jammer_ui_show       },
+    { "wiki_eve",         wiki_eve_main,          wiki_eve_ui_show         },
+};
+
+// ---------------------------------------------------------------------------
+// IPC API implementation provided to modules
+// ---------------------------------------------------------------------------
 static void api_log(const char *id, const char *msg)
 {
     char tag[48];
     snprintf(tag, sizeof(tag), "mod/%s", id);
     ESP_LOGI(tag, "%s", msg);
+    module_log_push(id, msg);
 }
 
 static void api_display_print(const char *id, const char *line)
 {
-    // Delegate to memory_view overlay
+    module_log_push(id, line);
     char tag[48];
     snprintf(tag, sizeof(tag), "mod/%s", id);
     ESP_LOGI(tag, "DISP: %s", line);
@@ -33,7 +92,7 @@ static void api_display_print(const char *id, const char *line)
 
 static void api_display_clear(const char *id)
 {
-    (void)id;
+    module_log_clear(id);
 }
 
 static esp_err_t api_send_msg(const char *id, ctos_msg_t *msg)
@@ -73,13 +132,15 @@ static const ctos_api_t s_api = {
     .get_free_heap  = api_get_free_heap,
 };
 
-/* Built-in module manifests — registered at boot without filesystem dependency.
- * firmware.bin is resolved from /modules/<id>/ or /sdcard/modules/<id>/
- * when a module is actually started. */
+const ctos_api_t *module_loader_get_api(void) { return &s_api; }
+
+// ---------------------------------------------------------------------------
+// Built-in module manifests — registered at boot
+// ---------------------------------------------------------------------------
 static const char *const s_builtin_manifests[] = {
     "{\"id\":\"badusb\",\"name\":\"Interactive BadUSB (DuckyScript)\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"hid\"}",
     "{\"id\":\"ble_hid_inject\",\"name\":\"BLE HID Wireless Keyboard Injection\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ble\"}",
-    "{\"id\":\"blerp\",\"name\":\"BLERP BLE Re-Pairing Attack (CI)\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ble\"}",
+    "{\"id\":\"blerp\",\"name\":\"BLERP BLE Re-Pairing Attack\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ble\"}",
     "{\"id\":\"espnow_c2\",\"name\":\"ESP-NOW Covert C2 Channel\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"wifi\"}",
     "{\"id\":\"gairoscope\",\"name\":\"GAIROSCOPE Speaker-to-Gyroscope Covert Channel\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"acoustic\"}",
     "{\"id\":\"ir_dazzle\",\"name\":\"IR Camera Dazzling\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ir\"}",
@@ -91,8 +152,6 @@ static const char *const s_builtin_manifests[] = {
     "{\"id\":\"wiki_eve\",\"name\":\"WiKI-Eve BFI Keystroke Inference\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"passive-wifi\"}",
 };
 
-/* Also scan filesystem paths for any user-installed modules not in the
- * built-in list (e.g. uploaded via web UI after firmware.bin is compiled). */
 static void scan_module_dir(const char *base)
 {
     DIR *d = opendir(base);
@@ -116,15 +175,24 @@ static void scan_module_dir(const char *base)
 
 void module_loader_init(void)
 {
-    // Register all built-in modules directly from embedded manifests
-    for (size_t i = 0; i < sizeof(s_builtin_manifests) / sizeof(s_builtin_manifests[0]); i++) {
+    size_t n_builtins = sizeof(s_builtin_manifests) / sizeof(s_builtin_manifests[0]);
+    size_t n_fns      = sizeof(s_builtin_fns) / sizeof(s_builtin_fns[0]);
+
+    for (size_t i = 0; i < n_builtins; i++) {
         const char *js = s_builtin_manifests[i];
         module_info_t info = {};
-        if (manifest_parse(js, strlen(js), &info) == ESP_OK)
-            module_registry_add(&info);
+        if (manifest_parse(js, strlen(js), &info) != ESP_OK) continue;
+
+        for (size_t j = 0; j < n_fns; j++) {
+            if (strcmp(info.id, s_builtin_fns[j].id) == 0) {
+                info.run_fn = s_builtin_fns[j].run_fn;
+                info.ui_fn  = s_builtin_fns[j].ui_fn;
+                break;
+            }
+        }
+        module_registry_add(&info);
     }
 
-    // Also pick up any user-uploaded modules from filesystem
     scan_module_dir("/modules");
     scan_module_dir("/sdcard/modules");
 
@@ -134,10 +202,6 @@ void module_loader_init(void)
 
 esp_err_t module_loader_install(const char *ctm_path)
 {
-    // .ctm is a ZIP. Extraction handled offline; on SD card we expect:
-    //   /sdcard/modules/<id>/manifest.json
-    //   /sdcard/modules/<id>/firmware.bin
-    // This function reads manifest.json and registers the module.
     char manifest_path[256];
     snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.json", ctm_path);
 
@@ -159,58 +223,29 @@ esp_err_t module_loader_install(const char *ctm_path)
     return module_registry_add(&info);
 }
 
-typedef struct {
-    char module_id[MODULE_ID_MAX_LEN];
-} loader_task_arg_t;
-
-static void module_task(void *arg)
-{
-    loader_task_arg_t *a = (loader_task_arg_t *)arg;
-    ESP_LOGI(TAG, "Module task started: %s", a->module_id);
-
-    module_registry_set_running(a->module_id, true);
-
-    // Real implementation: load firmware.bin into PSRAM, map, call entrypoint.
-    // Placeholder: loop until signalled to stop.
-    while (module_registry_is_running(a->module_id)) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-
-    ESP_LOGI(TAG, "Module task exiting: %s", a->module_id);
-    free(a);
-    vTaskDelete(NULL);
-}
-
 esp_err_t module_loader_start(const char *module_id)
 {
-    if (module_registry_is_running(module_id)) {
-        ESP_LOGW(TAG, "Module '%s' already running", module_id);
-        return ESP_ERR_INVALID_STATE;
+    if (module_registry_is_running(module_id)) return ESP_OK;
+
+    module_info_t info = {};
+    if (module_registry_find(module_id, &info) != ESP_OK) {
+        ESP_LOGE(TAG, "Module '%s' not found", module_id);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (!info.run_fn) {
+        ESP_LOGW(TAG, "Module '%s' has no run_fn", module_id);
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
-    loader_task_arg_t *arg = (loader_task_arg_t *)malloc(sizeof(loader_task_arg_t));
-    strlcpy(arg->module_id, module_id, sizeof(arg->module_id));
-
-    TaskHandle_t handle;
-    BaseType_t ret = xTaskCreatePinnedToCore(
-        module_task, module_id, 8192, arg, 5, &handle, 1);
-
-    if (ret != pdPASS) {
-        free(arg);
-        ESP_LOGE(TAG, "Failed to create task for module '%s'", module_id);
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Started module '%s'", module_id);
-    return ESP_OK;
+    ESP_LOGI(TAG, "Starting module '%s'", module_id);
+    return info.run_fn(&s_api);
 }
 
 esp_err_t module_loader_stop(const char *module_id)
 {
     if (!module_registry_is_running(module_id)) return ESP_OK;
     module_registry_set_running(module_id, false);
-    // Task will exit its loop and call vTaskDelete itself
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(200));
     ESP_LOGI(TAG, "Stopped module '%s'", module_id);
     return ESP_OK;
 }

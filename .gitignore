@@ -75,3 +75,6 @@ node_modules/
 
 # Host test build artifacts
 host/tests/host/build/
+
+# Session logs (AI context files, not for version control)
+session_log.html

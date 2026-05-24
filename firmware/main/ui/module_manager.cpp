@@ -17,15 +17,15 @@ static void render(void)
     M5.Display.fillScreen(TFT_BLACK);
     M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
     M5.Display.setCursor(0, 0);
-    M5.Display.print("Module Manager\n");
+    M5.Display.print("Module Manager");
 
     int count   = module_registry_count();
-    int visible = (M5.Display.height() - 24) / LINE_HEIGHT;
+    int visible = (M5.Display.height() - 26) / LINE_HEIGHT;
 
     if (count == 0) {
         M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.print("  No modules installed.\n");
-        M5.Display.print("  Upload .ctm via web UI.");
+        M5.Display.setCursor(0, 14);
+        M5.Display.print("No modules installed.");
     }
 
     for (int i = 0; i < visible && (s_scroll + i) < count; i++) {
@@ -40,12 +40,12 @@ static void render(void)
         M5.Display.printf("[%c] %-18s %s",
             info.running ? '*' : ' ',
             info.id,
-            info.running ? "RUN" : "IDLE");
+            info.running ? "RUN" : "IDL");
     }
 
     M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
     M5.Display.setCursor(0, M5.Display.height() - 10);
-    M5.Display.print("[,/.] nav  [Ent] toggle  [` ] back");
+    M5.Display.print("[,/.] [Ent]open [K]kill [`]back");
 }
 
 void ui_module_manager_show(void)
@@ -53,7 +53,6 @@ void ui_module_manager_show(void)
     s_cursor = 0;
     s_scroll  = 0;
 
-    // Drain the key that opened this screen
     do { vTaskDelay(pdMS_TO_TICKS(50)); CardputerKb.update(); }
     while (CardputerKb.isPressed());
 
@@ -69,8 +68,8 @@ void ui_module_manager_show(void)
 
         auto kb    = CardputerKb.getState();
         char key   = (char)kb.key.key.key_data.keys[0];
-        int  count = module_registry_count();
-        int  visible = (M5.Display.height() - 24) / LINE_HEIGHT;
+        int  count   = module_registry_count();
+        int  visible = (M5.Display.height() - 26) / LINE_HEIGHT;
 
         if (key == '`' || key == 27) return;
 
@@ -88,11 +87,22 @@ void ui_module_manager_show(void)
         } else if (key == '\n' || key == '\r') {
             module_info_t info;
             if (module_registry_get(s_cursor, &info) == ESP_OK) {
-                if (info.running)
-                    module_loader_stop(info.id);
-                else
-                    module_loader_start(info.id);
+                if (info.ui_fn) {
+                    info.ui_fn();
+                    // drain key that exited the module UI
+                    do { vTaskDelay(pdMS_TO_TICKS(50)); CardputerKb.update(); }
+                    while (CardputerKb.isPressed());
+                } else {
+                    if (info.running)
+                        module_loader_stop(info.id);
+                    else
+                        module_loader_start(info.id);
+                }
             }
+        } else if (key == 'k' || key == 'K') {
+            module_info_t info;
+            if (module_registry_get(s_cursor, &info) == ESP_OK && info.running)
+                module_loader_stop(info.id);
         }
 
         vTaskDelay(pdMS_TO_TICKS(150));

@@ -9,11 +9,25 @@ idf_component_register(
         "ui/file_browser.cpp"
         "ui/module_manager.cpp"
         "ui/wifi_config.cpp"
+        "ui/mod_common.cpp"
         "modules/loader.cpp"
         "modules/manifest.cpp"
         "modules/registry.cpp"
+        "modules/module_log.cpp"
         "settings/config.cpp"
-    INCLUDE_DIRS "."
+        "../modules/badusb/src/main.cpp"
+        "../modules/ble_hid_inject/src/main.cpp"
+        "../modules/blerp/src/main.cpp"
+        "../modules/espnow_c2/src/main.cpp"
+        "../modules/gairoscope/src/main.cpp"
+        "../modules/ir_dazzle/src/main.cpp"
+        "../modules/nuit_inject/src/main.cpp"
+        "../modules/passive_keystroke/src/main.cpp"
+        "../modules/passive_wifi_csi/src/main.cpp"
+        "../modules/sonar_snoop/src/main.cpp"
+        "../modules/ult_jammer/src/main.cpp"
+        "../modules/wiki_eve/src/main.cpp"
+    INCLUDE_DIRS "." "modules"
     REQUIRES
         m5unified
         esp_wifi
@@ -27,4 +41,7 @@ idf_component_register(
         freertos
         esp_psram
         cardputer_keyboard
+        driver
+        bt
+        esp_hid
 )
