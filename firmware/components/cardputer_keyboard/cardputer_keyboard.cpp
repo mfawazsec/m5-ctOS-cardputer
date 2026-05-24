@@ -26,51 +26,65 @@
 #define REG_EC         0x03
 #define REG_FIFO       0x04
 
-/* Cardputer keyboard matrix: 7 rows × 7 cols
- * TCA8418 key event codes always use a 10-column stride:
- *   code = row * 10 + col + 1  (regardless of how many cols are active)
- * So valid codes for our 7×7 matrix: 1-7, 11-17, 21-27, ..., 61-67 */
+/* Cardputer ADV keyboard matrix: 7 TCA8418 rows × 8 TCA8418 cols.
+ * TCA8418 key event codes use a fixed 10-column stride:
+ *   code = tca_row * 10 + tca_col + 1
+ * Valid codes: 1-8, 11-18, 21-28, 31-38, 41-48, 51-58, 61-68.
+ *
+ * Physical layout is 4 rows × 14 cols, interleaved via:
+ *   phys_row = tca_col & 3
+ *   phys_col = tca_row * 2 + (tca_col >> 2)
+ * Keymaps below are indexed by (code - 1) with stride 10. */
 #define KBD_ROWS   7
-#define KBD_COLS   7
-#define KBD_STRIDE 10               /* TCA8418 fixed column stride in keycode formula */
+#define KBD_COLS   8               /* 8 TCA8418 columns */
+#define KBD_STRIDE 10              /* TCA8418 fixed column stride in keycode formula */
 #define KBD_NCODES (KBD_ROWS * KBD_STRIDE)  /* 70: covers all valid codes */
+
+/* Special key codes (not yielding printable characters) */
+#define CODE_FN    3   /* TCA row0, col2 */
+#define CODE_SHIFT 7   /* TCA row0, col6 */
+#define CODE_CTRL  4   /* TCA row0, col3 */
+#define CODE_ALT   14  /* TCA row1, col3 */
+#define CODE_OPT   8   /* TCA row0, col7 */
 
 /* I2C frequency for TCA8418 (400 kHz) */
 #define KBD_FREQ   400000
 
 static const char *TAG = "kbd";
 
-/* ─── Cardputer QWERTY keymap ───────────────────────────────────────────── */
-/* Index = TCA8418 keycode - 1.
- * TCA8418 key code = row * 10 + col + 1 (fixed 10-col stride).
- * Each row occupies 10 slots; cols 7-9 are unused (0).
+/* ─── Cardputer ADV QWERTY keymap ───────────────────────────────────────── */
+/* Index = keycode - 1.  Each TCA8418 row occupies 10 slots; cols 8-9 unused.
  *
- *  Row 0 (codes  1–10):  `  1  2  3  4  5  6  [0  0  0]
- *  Row 1 (codes 11–20):  q  w  e  r  t  y  u  [0  0  0]
- *  Row 2 (codes 21–30):  a  s  d  f  g  h  i  [0  0  0]
- *  Row 3 (codes 31–40):  z  x  c  v  b  n  j  [0  0  0]
- *  Row 4 (codes 41–50):  Fn Spc k  l  ,  .  / [0  0  0]  ← code41=Fn
- *  Row 5 (codes 51–60):  Ctrl Alt o  p  ;  '  Ent [0 0 0]
- *  Row 6 (codes 61–70):  Shift Del m  ←  ↓  ↑  → [0 0 0]
+ * Physical layout (4 rows × 14 cols) mapped via:
+ *   phys_row = tca_col & 3,  phys_col = tca_row*2 + (tca_col >> 2)
+ *
+ * TCA row 0 (codes  1-10): `   Tab  Fn  Ctrl 1   q  Shift Opt  -   -
+ * TCA row 1 (codes 11-20): 2   w   a   Alt  3   e   s   z   -   -
+ * TCA row 2 (codes 21-30): 4   r   d   x    5   t   f   c   -   -
+ * TCA row 3 (codes 31-40): 6   y   g   v    7   u   h   b   -   -
+ * TCA row 4 (codes 41-50): 8   i   j   n    9   o   k   m   -   -
+ * TCA row 5 (codes 51-60): 0   p   l   ,    -   [   ;   .   -   -
+ * TCA row 6 (codes 61-70): =   ]   '   /   DEL  \  Ent Spc  -   -
  */
 static const char s_keymap_normal[KBD_NCODES] = {
- /* row0: 1-10  */ '`','1','2','3','4','5','6', 0, 0, 0,
- /* row1: 11-20 */ 'q','w','e','r','t','y','u', 0, 0, 0,
- /* row2: 21-30 */ 'a','s','d','f','g','h','i', 0, 0, 0,
- /* row3: 31-40 */ 'z','x','c','v','b','n','j', 0, 0, 0,
- /* row4: 41-50 */  0 ,' ','k','l',',','.','/', 0, 0, 0,
- /* row5: 51-60 */  0 , 0 ,'o','p',';','\'','\n',0,0, 0,
- /* row6: 61-70 */  0 ,127,'m', 0 , 0 , 0 , 0 , 0, 0, 0,
+ /* codes  1-10 */ '`', '\t',  0 ,  0 , '1', 'q',  0 ,  0 ,  0 ,  0 ,
+ /* codes 11-20 */ '2', 'w', 'a',  0 , '3', 'e', 's', 'z',  0 ,  0 ,
+ /* codes 21-30 */ '4', 'r', 'd', 'x', '5', 't', 'f', 'c',  0 ,  0 ,
+ /* codes 31-40 */ '6', 'y', 'g', 'v', '7', 'u', 'h', 'b',  0 ,  0 ,
+ /* codes 41-50 */ '8', 'i', 'j', 'n', '9', 'o', 'k', 'm',  0 ,  0 ,
+ /* codes 51-60 */ '0', 'p', 'l', ',', '-', '[', ';', '.',  0 ,  0 ,
+ /* codes 61-70 */ '=', ']','\'', '/',127 ,'\\','\n', ' ',  0 ,  0 ,
 };
 
+/* Fn / Shift layer */
 static const char s_keymap_fn[KBD_NCODES] = {
- /* row0: 1-10  */ '~','!','@','#','$','%','^', 0, 0, 0,
- /* row1: 11-20 */ 'Q','W','E','R','T','Y','U', 0, 0, 0,
- /* row2: 21-30 */ 'A','S','D','F','G','H','i', 0, 0, 0,  /* FN+H → up  */
- /* row3: 31-40 */ 'Z','X','C','V','B','N','j', 0, 0, 0,
- /* row4: 41-50 */  0 ,' ','k','l','<','>','?', 0, 0, 0,  /* FN+K/L = arrows */
- /* row5: 51-60 */  0 , 0 ,'O','P',':','"','\n',0, 0, 0,
- /* row6: 61-70 */  0 ,127,'M', 0 , 0 , 0 , 0 , 0, 0, 0,
+ /* codes  1-10 */ '~', '\t',  0 ,  0 , '!', 'Q',  0 ,  0 ,  0 ,  0 ,
+ /* codes 11-20 */ '@', 'W', 'A',  0 , '#', 'E', 'S', 'Z',  0 ,  0 ,
+ /* codes 21-30 */ '$', 'R', 'D', 'X', '%', 'T', 'F', 'C',  0 ,  0 ,
+ /* codes 31-40 */ '^', 'Y', 'G', 'V', '&', 'U', 'H', 'B',  0 ,  0 ,
+ /* codes 41-50 */ '*', 'I', 'J', 'N', '(', 'O', 'K', 'M',  0 ,  0 ,
+ /* codes 51-60 */ ')', 'P', 'L', '<', '_', '{', ':', '>',  0 ,  0 ,
+ /* codes 61-70 */ '+', '}', '"', '?',127 , '|','\n', ' ',  0 ,  0 ,
 };
 
 /* ─── driver state ──────────────────────────────────────────────────────── */
@@ -125,22 +139,21 @@ bool cardputer_kb_init(void)
         return false;
     }
 
-    /* Configure: enable key-event FIFO; 7×7 matrix.
-     * After reset all TCA8418 pins are GPIOs — we must write KP_GPIO
-     * registers (0x1D-0x1F) to activate the keypad matrix.
-     * KP_GPIO1 0x1D: bits[6:0] = rows R0-R6 → keypad
-     * KP_GPIO2 0x1E: bits[7:2] = cols C0-C5 → keypad (R8/R9 stay GPIO)
-     * KP_GPIO3 0x1F: bit[0]    = col  C6    → keypad */
     tca_write(REG_CFG, 0x01);          /* KE_IEN: key-event interrupt enable */
-    tca_write(0x1D, 0x7F);             /* KP_GPIO1: R0-R6 as keypad rows */
-    tca_write(0x1E, 0x7F);             /* KP_GPIO2: C0-C6 as keypad cols */
-    tca_write(0x1F, 0x00);             /* KP_GPIO3: C8/C9 unused */
+    tca_write(0x1D, 0x7F);             /* KP_GPIO1: rows 0-6 as keypad (7 rows) */
+    tca_write(0x1E, 0xFF);             /* KP_GPIO2: cols 0-7 as keypad (8 cols) */
+    tca_write(0x1F, 0x00);             /* KP_GPIO3: no extra cols */
 
     /* Clear any stale events and interrupt flags */
     tca_write(REG_INT_ST, 0x1F);
 
+    ESP_LOGI(TAG, "TCA8418 init: cfg=0x%02X KP_GPIO=0x%02X/0x%02X/0x%02X INT=0x%02X EC=0x%02X",
+             cfg,
+             tca_read(0x1D), tca_read(0x1E), tca_read(0x1F),
+             tca_read(REG_INT_ST), tca_read(REG_EC));
+
     s_kbd.init = true;
-    ESP_LOGI(TAG, "TCA8418 keyboard ready (cfg=0x%02X)", cfg);
+    ESP_LOGI(TAG, "TCA8418 keyboard ready — press a key now");
     return true;
 }
 
@@ -151,12 +164,20 @@ void cardputer_kb_update(void)
     uint8_t ec = tca_read(REG_EC) & 0x0F;
     bool changed = false;
 
+    if (ec) {
+        ESP_LOGI(TAG, "FIFO events: %d (INT=0x%02X)", ec, tca_read(REG_INT_ST));
+    }
+
     while (ec--) {
         uint8_t ev = tca_read(REG_FIFO);
         bool press = (ev & 0x80) != 0;
         uint8_t code = ev & 0x7F;
 
-        if (code == 0 || code > KBD_NCODES) continue;
+        ESP_LOGI(TAG, "  ev=0x%02X %s code=%d", ev, press ? "PRESS" : "RELEASE", code);
+        if (press && code != 0 && code <= KBD_NCODES)
+            ESP_LOGI(TAG, "KEY_TEST_RAW code=%u", (unsigned)code);
+
+        if (code == 0 || code > KBD_NCODES) { ESP_LOGW(TAG, "  → discarded"); continue; }
 
         if (press) {
             bool found = false;
@@ -187,10 +208,11 @@ void cardputer_kb_update(void)
     /* Clear interrupt flags */
     tca_write(REG_INT_ST, 0x1F);
 
-    /* Fn key = row 4, col 0 → code = 4*10 + 0 + 1 = 41 */
+    /* Fn (code 3) or Shift (code 7) activates the fn/shift layer */
     s_kbd.fn_held = false;
     for (int i = 0; i < 6; i++) {
-        if (s_kbd.pressed_codes[i] == 41) { s_kbd.fn_held = true; break; }
+        uint8_t c = s_kbd.pressed_codes[i];
+        if (c == CODE_FN || c == CODE_SHIFT) { s_kbd.fn_held = true; break; }
     }
 
     /* Rebuild key state */
@@ -201,9 +223,15 @@ void cardputer_kb_update(void)
     int out_idx = 0;
     for (int i = 0; i < 6 && out_idx < 6; i++) {
         uint8_t code = s_kbd.pressed_codes[i];
-        if (code == 0 || code == 41) continue; /* skip no-key and Fn itself */
+        /* skip modifier keys and empty slots */
+        if (code == 0 || code == CODE_FN || code == CODE_SHIFT ||
+            code == CODE_CTRL || code == CODE_ALT || code == CODE_OPT) continue;
         char ch = (code - 1 < KBD_NCODES) ? map[code - 1] : 0;
-        if (ch) s_kbd.state.key.key.key_data.keys[out_idx++] = (uint8_t)ch;
+        if (ch) {
+            ESP_LOGI(TAG, "  → char '%c' (0x%02X)", ch >= 32 && ch < 127 ? ch : '?', (uint8_t)ch);
+            ESP_LOGI(TAG, "KEY_TEST_CHAR code=%u char=%u", (unsigned)code, (unsigned)(uint8_t)ch);
+            s_kbd.state.key.key.key_data.keys[out_idx++] = (uint8_t)ch;
+        }
     }
 
     s_kbd.changed = changed;
