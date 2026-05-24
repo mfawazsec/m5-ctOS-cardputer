@@ -1,0 +1,10 @@
+{
+  "id": "blerp",
+  "name": "BLERP BLE Re-Pairing Attack (CI)",
+  "version": "1.0.0",
+  "author": "fawaz",
+  "category": "ble",
+  "requires_hardware": ["ble"],
+  "min_os_version": "2.0.0",
+  "entrypoint": "firmware.bin"
+}
