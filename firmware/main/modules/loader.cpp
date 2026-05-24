@@ -73,12 +73,30 @@ static const ctos_api_t s_api = {
     .get_free_heap  = api_get_free_heap,
 };
 
-/* Scan a directory for <id>/manifest.json subdirs and register each. */
+/* Built-in module manifests — registered at boot without filesystem dependency.
+ * firmware.bin is resolved from /modules/<id>/ or /sdcard/modules/<id>/
+ * when a module is actually started. */
+static const char *const s_builtin_manifests[] = {
+    "{\"id\":\"badusb\",\"name\":\"Interactive BadUSB (DuckyScript)\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"hid\"}",
+    "{\"id\":\"ble_hid_inject\",\"name\":\"BLE HID Wireless Keyboard Injection\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ble\"}",
+    "{\"id\":\"blerp\",\"name\":\"BLERP BLE Re-Pairing Attack (CI)\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ble\"}",
+    "{\"id\":\"espnow_c2\",\"name\":\"ESP-NOW Covert C2 Channel\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"wifi\"}",
+    "{\"id\":\"gairoscope\",\"name\":\"GAIROSCOPE Speaker-to-Gyroscope Covert Channel\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"acoustic\"}",
+    "{\"id\":\"ir_dazzle\",\"name\":\"IR Camera Dazzling\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"ir\"}",
+    "{\"id\":\"nuit_inject\",\"name\":\"NUIT Near-Ultrasound Voice Injection\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"acoustic\"}",
+    "{\"id\":\"passive_keystroke\",\"name\":\"Passive Acoustic Keystroke Logger\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"acoustic\"}",
+    "{\"id\":\"passive_wifi_csi\",\"name\":\"Passive WiFi Sensing (CSI)\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"passive-wifi\"}",
+    "{\"id\":\"sonar_snoop\",\"name\":\"SonarSnoop Acoustic Gesture Inference\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"acoustic\"}",
+    "{\"id\":\"ult_jammer\",\"name\":\"Ultrasonic Microphone Jammer\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"acoustic\"}",
+    "{\"id\":\"wiki_eve\",\"name\":\"WiKI-Eve BFI Keystroke Inference\",\"version\":\"1.0.0\",\"author\":\"fawaz\",\"category\":\"passive-wifi\"}",
+};
+
+/* Also scan filesystem paths for any user-installed modules not in the
+ * built-in list (e.g. uploaded via web UI after firmware.bin is compiled). */
 static void scan_module_dir(const char *base)
 {
     DIR *d = opendir(base);
     if (!d) return;
-
     struct dirent *ent;
     while ((ent = readdir(d))) {
         if (ent->d_name[0] == '.') continue;
@@ -91,17 +109,25 @@ static void scan_module_dir(const char *base)
         fclose(f);
         esp_err_t e = module_loader_install(path);
         if (e == ESP_OK)
-            ESP_LOGI(TAG, "Auto-registered module from %s", path);
-        else
-            ESP_LOGW(TAG, "Failed to register %s: %s", path, esp_err_to_name(e));
+            ESP_LOGI(TAG, "Installed extra module from %s", path);
     }
     closedir(d);
 }
 
 void module_loader_init(void)
 {
-    scan_module_dir("/modules");      // internal FAT partition
-    scan_module_dir("/sdcard/modules"); // SD card
+    // Register all built-in modules directly from embedded manifests
+    for (size_t i = 0; i < sizeof(s_builtin_manifests) / sizeof(s_builtin_manifests[0]); i++) {
+        const char *js = s_builtin_manifests[i];
+        module_info_t info = {};
+        if (manifest_parse(js, strlen(js), &info) == ESP_OK)
+            module_registry_add(&info);
+    }
+
+    // Also pick up any user-uploaded modules from filesystem
+    scan_module_dir("/modules");
+    scan_module_dir("/sdcard/modules");
+
     ESP_LOGI(TAG, "Module loader ready — %d module(s) registered",
              module_registry_count());
 }
