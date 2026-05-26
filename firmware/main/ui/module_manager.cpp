@@ -45,7 +45,7 @@ static void render(void)
 
     M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
     M5.Display.setCursor(0, M5.Display.height() - 10);
-    M5.Display.print("[,/.] [Ent]open [K]kill [`]back");
+    M5.Display.print("[,.][Ent] [K]kill [`]back");
 }
 
 void ui_module_manager_show(void)
@@ -56,10 +56,17 @@ void ui_module_manager_show(void)
     do { vTaskDelay(pdMS_TO_TICKS(50)); CardputerKb.update(); }
     while (CardputerKb.isPressed());
 
+    TickType_t last_draw = 0;
+
     while (true) {
         M5.update();
         CardputerKb.update();
-        render();
+
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            render();
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) {
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -105,6 +112,7 @@ void ui_module_manager_show(void)
                 module_loader_stop(info.id);
         }
 
+        last_draw = 0;  // force redraw after key press
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

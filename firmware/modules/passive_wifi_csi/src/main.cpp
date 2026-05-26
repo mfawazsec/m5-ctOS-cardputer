@@ -141,33 +141,40 @@ extern "C" void passive_wifi_csi_ui_show(void)
     mod_drain_keys();
     bool log_view = false;
 
+    TickType_t last_draw = 0;
+
     while (true) {
         M5.update();
         CardputerKb.update();
 
         if (log_view) { mod_show_log_view(ID, "WIFI CSI"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("WIFI CSI SENSING");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("WIFI CSI SENSING");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Status: %s", s_capturing ? "CAPTURING" : "PAUSED");
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Frames: %lu", (unsigned long)s_frame_count);
-        M5.Display.setCursor(0, 38);
-        M5.Display.printf("CSI:  [%s]", s_bar_buf);
-        M5.Display.setCursor(0, 50);
-        M5.Display.print("Subcarriers: 52 (20MHz HT)");
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("Log: /sdcard/csi_log.csv");
-        M5.Display.setCursor(0, 74);
-        M5.Display.print("Technique: WiFi motion sense");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Status: %s", s_capturing ? "CAPTURING" : "PAUSED");
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Frames: %lu", (unsigned long)s_frame_count);
+            M5.Display.setCursor(0, 38);
+            M5.Display.printf("CSI:  [%s]", s_bar_buf);
+            M5.Display.setCursor(0, 50);
+            M5.Display.print("Subcarriers: 52 (20MHz HT)");
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("Log: csi_log.csv");
+            M5.Display.setCursor(0, 74);
+            M5.Display.print("Technique: WiFi motion sense");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[SPC]toggle [L]log [`]back");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[SPC]toggle [L]log [`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -176,6 +183,7 @@ extern "C" void passive_wifi_csi_ui_show(void)
         if (key == '`' || key == 27) return;
         else if (key == 'l' || key == 'L') log_view = true;
         else if (key == ' ') s_capturing = !s_capturing;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

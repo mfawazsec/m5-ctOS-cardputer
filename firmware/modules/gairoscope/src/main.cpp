@@ -100,6 +100,7 @@ extern "C" void gairoscope_ui_show(void)
     module_loader_start(ID);
     mod_drain_keys();
     bool log_view = false;
+    TickType_t last_draw = 0;
 
     while (true) {
         M5.update();
@@ -107,27 +108,32 @@ extern "C" void gairoscope_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "GAIROSCOPE"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_MAGENTA, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("GAIROSCOPE");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_MAGENTA, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("GAIROSCOPE");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Status: %s", s_transmitting ? "TRANSMITTING" : "IDLE");
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Freq0:  %.0f Hz (bit 0)", FREQ_ZERO);
-        M5.Display.setCursor(0, 38);
-        M5.Display.printf("Freq1:  %.0f Hz (bit 1)", FREQ_ONE);
-        M5.Display.setCursor(0, 50);
-        M5.Display.printf("Bits:   %lu sent", (unsigned long)s_bits_sent);
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("Rate:   ~8 bits/sec FSK");
-        M5.Display.setCursor(0, 74);
-        M5.Display.print("Target: phone gyroscope");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Status: %s", s_transmitting ? "TRANSMITTING" : "IDLE");
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Freq0:  %.0f Hz (bit 0)", FREQ_ZERO);
+            M5.Display.setCursor(0, 38);
+            M5.Display.printf("Freq1:  %.0f Hz (bit 1)", FREQ_ONE);
+            M5.Display.setCursor(0, 50);
+            M5.Display.printf("Bits:   %lu sent", (unsigned long)s_bits_sent);
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("Rate:   ~20 bits/sec FSK");
+            M5.Display.setCursor(0, 74);
+            M5.Display.print("Target: phone gyroscope");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[SPC]toggle [L]log [`]back");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[SPC]toggle [L]log [`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -136,6 +142,7 @@ extern "C" void gairoscope_ui_show(void)
         if (key == '`' || key == 27) return;
         else if (key == 'l' || key == 'L') log_view = true;
         else if (key == ' ') s_transmitting = !s_transmitting;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

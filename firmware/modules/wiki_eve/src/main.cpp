@@ -131,33 +131,40 @@ extern "C" void wiki_eve_ui_show(void)
     mod_drain_keys();
     bool log_view = false;
 
+    TickType_t last_draw = 0;
+
     while (true) {
         M5.update();
         CardputerKb.update();
 
         if (log_view) { mod_show_log_view(ID, "WiKI-Eve"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("WiKI-Eve BFI CAPTURE");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("WiKI-Eve BFI CAPTURE");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Status: %s", s_active ? "CAPTURING" : "PAUSED");
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Chan:   %d  [C] change", s_channel);
-        M5.Display.setCursor(0, 38);
-        M5.Display.printf("BFI:    %lu frames", (unsigned long)s_frame_count);
-        M5.Display.setCursor(0, 50);
-        M5.Display.printf("PSRAM:  %u / 64 KB", (unsigned)(s_psram_fill / 1024));
-        M5.Display.setCursor(0, 62);
-        M5.Display.printf("SD:     %s", s_bin_file ? "OPEN" : "UNAVAILABLE");
-        M5.Display.setCursor(0, 74);
-        M5.Display.print("Target: VHT BF Reports 0x15/0x00");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Status: %s", s_active ? "CAPTURING" : "PAUSED");
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Chan: %d  [C]change", s_channel);
+            M5.Display.setCursor(0, 38);
+            M5.Display.printf("BFI:  %lu frames", (unsigned long)s_frame_count);
+            M5.Display.setCursor(0, 50);
+            M5.Display.printf("Buf:  %u / 64 KB", (unsigned)(s_psram_fill / 1024));
+            M5.Display.setCursor(0, 62);
+            M5.Display.printf("SD:   %s", s_bin_file ? "OPEN" : "UNAVAILABLE");
+            M5.Display.setCursor(0, 74);
+            M5.Display.print("VHT BF Reports 0x15/0x00");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[SPC]toggle [F]flush [L]log [`]bk");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[SPC][C][F]flush [L][`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -171,6 +178,7 @@ extern "C" void wiki_eve_ui_show(void)
             s_channel = (s_channel % 13) + 1;
             esp_wifi_set_channel(s_channel, WIFI_SECOND_CHAN_NONE);
         }
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

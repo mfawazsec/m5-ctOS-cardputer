@@ -174,6 +174,7 @@ extern "C" void sonar_snoop_ui_show(void)
     module_loader_start(ID);
     mod_drain_keys();
     bool log_view = false;
+    TickType_t last_draw = 0;
 
     while (true) {
         M5.update();
@@ -181,33 +182,38 @@ extern "C" void sonar_snoop_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "SONAR SNOOP"); log_view = false; mod_drain_keys(); continue; }
 
-        float delta  = s_last_delta;
-        int bars     = (int)(delta / 500.0f);
-        if (bars < 0) bars = 0;
-        if (bars > 20) bars = 20;
-        char bar[22]; for (int i=0;i<20;i++) bar[i]=(i<bars)?'#':' '; bar[20]='\0';
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            float delta  = s_last_delta;
+            int bars     = (int)(delta / 500.0f);
+            if (bars < 0) bars = 0;
+            if (bars > 20) bars = 20;
+            char bar[22]; for (int i=0;i<20;i++) bar[i]=(i<bars)?'#':' '; bar[20]='\0';
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("SONAR SNOOP");
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("SONAR SNOOP");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Pings:    %d  (40Hz cycle)", s_ping_count);
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Baseline: %.0f", s_baseline);
-        M5.Display.setCursor(0, 38);
-        M5.Display.printf("Delta:    %.0f", delta);
-        M5.Display.setCursor(0, 50);
-        M5.Display.printf("[%s]", bar);
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("Freq: 20kHz 5ms burst");
-        M5.Display.setCursor(0, 74);
-        M5.Display.print("Log: /sdcard/sonar_echo.bin");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Pings: %-6d (40Hz)", s_ping_count);
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Baseline: %.0f", s_baseline);
+            M5.Display.setCursor(0, 38);
+            M5.Display.printf("Delta:    %.0f", delta);
+            M5.Display.setCursor(0, 50);
+            M5.Display.printf("[%s]", bar);
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("Freq: 20kHz  5ms burst");
+            M5.Display.setCursor(0, 74);
+            M5.Display.print("Log: sonar_echo.bin");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[R]recal [L]log [`]back");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[R]recal [L]log [`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -216,6 +222,7 @@ extern "C" void sonar_snoop_ui_show(void)
         if (key == '`' || key == 27) return;
         else if (key == 'l' || key == 'L') log_view = true;
         else if (key == 'r' || key == 'R') s_recalibrate = true;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

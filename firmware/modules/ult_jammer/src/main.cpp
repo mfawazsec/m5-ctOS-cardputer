@@ -109,6 +109,7 @@ extern "C" void ult_jammer_ui_show(void)
 
     bool log_view = false;
     static const char *level_str[] = { "LOW (8000)", "MED (16000)", "HIGH (28000)" };
+    TickType_t last_draw = 0;
 
     while (true) {
         M5.update();
@@ -116,28 +117,33 @@ extern "C" void ult_jammer_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "ULT JAMMER"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("ULTRASONIC JAMMER");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("ULTRASONIC JAMMER");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Status:    %s", s_jammer_on ? "ON  <ACTIVE>" : "OFF");
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Intensity: %s", level_str[s_intensity]);
-        M5.Display.setCursor(0, 38);
-        M5.Display.print("Freq:      18-22kHz sweep");
-        M5.Display.setCursor(0, 50);
-        M5.Display.print("Output:    NS4168 I2S amp");
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("WARN: HIGH may damage hearing");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Status:    %s", s_jammer_on ? "ON  <ACTIVE>" : "OFF");
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Intensity: %s", level_str[s_intensity]);
+            M5.Display.setCursor(0, 38);
+            M5.Display.print("Freq: 18-22kHz sweep");
+            M5.Display.setCursor(0, 50);
+            M5.Display.print("Output: NS4168 I2S amp");
+            M5.Display.setTextColor(TFT_RED, TFT_BLACK);
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("WARN: HIGH may damage hearing");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 22);
-        M5.Display.print("[1]Low [2]Med [3]High");
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[SPC]toggle [L]log [`]back");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 22);
+            M5.Display.print("[1]Low [2]Med [3]High");
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[SPC]toggle [L]log [`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -149,6 +155,7 @@ extern "C" void ult_jammer_ui_show(void)
         else if (key == '2') s_intensity = INTENSITY_MED;
         else if (key == '3') s_intensity = INTENSITY_HIGH;
         else if (key == ' ') s_jammer_on = !s_jammer_on;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

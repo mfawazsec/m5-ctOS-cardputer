@@ -193,6 +193,7 @@ extern "C" void blerp_ui_show(void)
     module_loader_start(ID);
     mod_drain_keys();
     bool log_view = false;
+    TickType_t last_draw = 0;
 
     while (true) {
         M5.update();
@@ -200,34 +201,38 @@ extern "C" void blerp_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "BLERP"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("BLERP — BLE CI REPAIRING");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("BLERP — BLE CI REPAIRING");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Status: %s", s_scanning ? "SCANNING" : "IDLE");
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Devices: %d found", s_dev_count);
-        M5.Display.setCursor(0, 38);
-        M5.Display.printf("Hits:    %d vulnerable", s_hit_count);
-        M5.Display.setCursor(0, 50);
-        M5.Display.print("Attack: CI Confused Identity");
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("Log: /sdcard/blerp_log.txt");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Status: %s", s_scanning ? "SCANNING" : "IDLE");
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Devices: %d found", s_dev_count);
+            M5.Display.setCursor(0, 38);
+            M5.Display.printf("Hits:    %d vulnerable", s_hit_count);
+            M5.Display.setCursor(0, 50);
+            M5.Display.print("Attack: CI Repairing");
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("Log: blerp_log.txt");
 
-        // Show first 2 discovered devices
-        int shown = s_dev_count < 2 ? s_dev_count : 2;
-        for (int i = 0; i < shown; i++) {
-            M5.Display.setCursor(0, 74 + i * MOD_LH);
-            M5.Display.printf("[%d] %02x:%02x:%02x %s", i,
-                              s_devlist[i].addr.val[5], s_devlist[i].addr.val[4],
-                              s_devlist[i].addr.val[3], s_devlist[i].name);
+            int shown = s_dev_count < 2 ? s_dev_count : 2;
+            for (int i = 0; i < shown; i++) {
+                M5.Display.setCursor(0, 74 + i * MOD_LH);
+                M5.Display.printf("[%d] %02x:%02x:%02x %.12s", i,
+                                  s_devlist[i].addr.val[5], s_devlist[i].addr.val[4],
+                                  s_devlist[i].addr.val[3], s_devlist[i].name);
+            }
+
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[L]log [`]back");
+
+            last_draw = now;
         }
-
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[L]log [`]back");
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -235,6 +240,7 @@ extern "C" void blerp_ui_show(void)
 
         if (key == '`' || key == 27) return;
         else if (key == 'l' || key == 'L') log_view = true;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

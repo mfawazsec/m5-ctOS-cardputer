@@ -112,6 +112,7 @@ extern "C" void ir_dazzle_ui_show(void)
 
     bool log_view = false;
     static const char *mode_names[] = { "CONTINUOUS 38kHz", "BURST 10ms/5ms", "SWEEP 20-56kHz" };
+    TickType_t last_draw = 0;
 
     while (true) {
         M5.update();
@@ -119,25 +120,30 @@ extern "C" void ir_dazzle_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "IR DAZZLE"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("IR DAZZLE");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_RED, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("IR DAZZLE");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Mode:   %s", mode_names[s_mode]);
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Status: %s", (s_active && module_registry_is_running(ID)) ? "TRANSMITTING" : "STOPPED");
-        M5.Display.setCursor(0, 38);
-        M5.Display.print("Target: IR Camera/Sensor");
-        M5.Display.setCursor(0, 50);
-        M5.Display.print("GPIO:   44 (onboard LED)");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Mode:   %s", mode_names[s_mode]);
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Status: %s", (s_active && module_registry_is_running(ID)) ? "TRANSMITTING" : "STOPPED");
+            M5.Display.setCursor(0, 38);
+            M5.Display.print("Target: IR Camera/Sensor");
+            M5.Display.setCursor(0, 50);
+            M5.Display.print("GPIO: 44 (onboard IR LED)");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 22);
-        M5.Display.print("[1]Cont [2]Burst [3]Sweep");
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[SPC]toggle [L]log [`]back");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 22);
+            M5.Display.print("[1]Cont [2]Burst [3]Sweep");
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[SPC]toggle [L]log [`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -152,6 +158,7 @@ extern "C" void ir_dazzle_ui_show(void)
             s_active = !s_active;
             if (s_active) module_loader_start(ID);
         }
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

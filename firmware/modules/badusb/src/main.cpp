@@ -340,47 +340,54 @@ extern "C" void badusb_ui_show(void)
     bool log_view = false;
     int  cursor   = 0;
 
+    TickType_t last_draw = 0;
+
     while (true) {
         M5.update();
         CardputerKb.update();
 
         if (log_view) { mod_show_log_view(ID, "BADUSB"); log_view = false; mod_drain_keys(); continue; }
 
-        if (s_payload_count == 0) list_payloads();
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            if (s_payload_count == 0) list_payloads();
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.setCursor(0, 0);
-        if (s_executing)
-            M5.Display.print("BADUSB  <EXECUTING>");
-        else if (!s_hid_active)
-            M5.Display.print("BADUSB  [HID:stub]");
-        else
-            M5.Display.print("BADUSB  READY");
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_RED, TFT_BLACK);
+            M5.Display.setCursor(0, 0);
+            if (s_executing)
+                M5.Display.print("BADUSB  <EXECUTING>");
+            else if (!s_hid_active)
+                M5.Display.print("BADUSB  [HID:stub]");
+            else
+                M5.Display.print("BADUSB  READY");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
 
-        if (s_payload_count == 0) {
-            M5.Display.setCursor(0, 14);
-            M5.Display.print("No payloads found.");
-            M5.Display.setCursor(0, 26);
-            M5.Display.print("Put .ducky on:");
-            M5.Display.setCursor(0, 38);
-            M5.Display.print("/sdcard/payloads/");
-        } else {
-            int visible = (M5.Display.height() - 26) / MOD_LH;
-            for (int i = 0; i < visible && i < s_payload_count; i++) {
-                bool sel = (i == cursor);
-                M5.Display.setTextColor(sel ? TFT_BLACK : TFT_WHITE,
-                                        sel ? TFT_RED   : TFT_BLACK);
-                M5.Display.setCursor(0, 14 + i * MOD_LH);
-                M5.Display.printf("%.26s", s_names[i]);
+            if (s_payload_count == 0) {
+                M5.Display.setCursor(0, 14);
+                M5.Display.print("No payloads found.");
+                M5.Display.setCursor(0, 26);
+                M5.Display.print("Put .ducky on:");
+                M5.Display.setCursor(0, 38);
+                M5.Display.print("/sdcard/payloads/");
+            } else {
+                int visible = (M5.Display.height() - 26) / MOD_LH;
+                for (int i = 0; i < visible && i < s_payload_count; i++) {
+                    bool sel = (i == cursor);
+                    M5.Display.setTextColor(sel ? TFT_BLACK : TFT_WHITE,
+                                            sel ? TFT_RED   : TFT_BLACK);
+                    M5.Display.setCursor(0, 14 + i * MOD_LH);
+                    M5.Display.printf("%.26s", s_names[i]);
+                }
             }
-        }
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[,/.] [Ent]exec [R]reload [L]log");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[,.][Ent]run [R]rld [L][`]");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -393,6 +400,7 @@ extern "C" void badusb_ui_show(void)
         else if ((key == '.' || key == '/') && cursor < s_payload_count - 1) cursor++;
         else if ((key == '\n' || key == '\r') && !s_executing && s_payload_count > 0)
             s_exec_index = cursor;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

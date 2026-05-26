@@ -127,38 +127,45 @@ extern "C" void espnow_c2_ui_show(void)
     mod_drain_keys();
     bool log_view = false;
 
+    TickType_t last_draw = 0;
+
     while (true) {
         M5.update();
         CardputerKb.update();
 
         if (log_view) { mod_show_log_view(ID, "ESP-NOW C2"); log_view = false; mod_drain_keys(); continue; }
 
-        wifi_second_chan_t sc;
-        uint8_t chan = 1;
-        esp_wifi_get_channel(&chan, &sc);
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            wifi_second_chan_t sc;
+            uint8_t chan = 1;
+            esp_wifi_get_channel(&chan, &sc);
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("ESP-NOW C2 CHANNEL");
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("ESP-NOW C2 CHANNEL");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Chan: %d  [C]change", chan);
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("RX: %lu  TX: %lu", (unsigned long)s_rx_count, (unsigned long)s_tx_count);
-        M5.Display.setCursor(0, 38);
-        M5.Display.print("Peers: broadcast+added");
-        M5.Display.setCursor(0, 50);
-        if (s_last_rx[0])
-            M5.Display.printf("Last: %.26s", s_last_rx);
-        else
-            M5.Display.print("Last: (waiting...)");
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("No AP assoc. needed");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Chan: %d  [C]change", chan);
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("RX: %lu  TX: %lu", (unsigned long)s_rx_count, (unsigned long)s_tx_count);
+            M5.Display.setCursor(0, 38);
+            M5.Display.print("Peers: broadcast+added");
+            M5.Display.setCursor(0, 50);
+            if (s_last_rx[0])
+                M5.Display.printf("Last: %.20s", s_last_rx);
+            else
+                M5.Display.print("Last: (waiting...)");
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("No AP assoc. needed");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[B]beacon [C]chan [L]log [`]bk");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[B]bcn [C]ch [L]log[`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -171,9 +178,13 @@ extern "C" void espnow_c2_ui_show(void)
             const char *msg = "ctOS-C2-BEACON";
             esp_now_send(bc, (const uint8_t *)msg, strlen(msg)+1);
         } else if (key == 'c' || key == 'C') {
-            uint8_t next_ch = (chan % 13) + 1;
+            wifi_second_chan_t sc2;
+            uint8_t chan2 = 1;
+            esp_wifi_get_channel(&chan2, &sc2);
+            uint8_t next_ch = (chan2 % 13) + 1;
             esp_wifi_set_channel(next_ch, WIFI_SECOND_CHAN_NONE);
         }
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

@@ -325,6 +325,7 @@ extern "C" void ble_hid_inject_ui_show(void)
     mod_drain_keys();
     bool log_view = false;
     int  cursor   = 0;
+    TickType_t s_last_hid_draw = 0;
 
     while (true) {
         M5.update();
@@ -332,28 +333,32 @@ extern "C" void ble_hid_inject_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "BLE HID"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("BLE HID INJECT");
+        TickType_t _now = xTaskGetTickCount();
+        if ((_now - s_last_hid_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("BLE HID INJECT");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Status: %s", s_connected ? "CONNECTED" : "ADVERTISING");
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Status: %s", s_connected ? "CONNECTED" : "ADVERTISING");
 
-        // Payload list
-        for (int i = 0; i < k_payload_count; i++) {
-            bool sel = (i == cursor);
-            M5.Display.setTextColor(sel ? TFT_BLACK : TFT_WHITE,
-                                    sel ? TFT_CYAN  : TFT_BLACK);
-            M5.Display.setCursor(0, 26 + i * MOD_LH);
-            M5.Display.printf("[%d] %s", i, k_payload_labels[i]);
+            for (int i = 0; i < k_payload_count; i++) {
+                bool sel = (i == cursor);
+                M5.Display.setTextColor(sel ? TFT_BLACK : TFT_WHITE,
+                                        sel ? TFT_CYAN  : TFT_BLACK);
+                M5.Display.setCursor(0, 26 + i * MOD_LH);
+                M5.Display.printf("[%d] %s", i, k_payload_labels[i]);
+            }
+
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 22);
+            M5.Display.print("Pair: 'ctOS Keyboard'");
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[Ent]send [,.]nav [L][\`]bk");
+
+            s_last_hid_draw = _now;
         }
-
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 22);
-        M5.Display.printf("Pair: 'ctOS Keyboard' BLE");
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[Ent]inject [,/.]nav [L]log [`]bk");
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -366,6 +371,7 @@ extern "C" void ble_hid_inject_ui_show(void)
         else if ((key == '\n' || key == '\r') && s_connected && !s_injecting) {
             inject_string(k_payloads[cursor]);
         }
+        s_last_hid_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

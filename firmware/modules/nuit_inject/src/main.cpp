@@ -108,6 +108,7 @@ extern "C" void nuit_inject_ui_show(void)
 
     bool log_view = false;
     int  cursor   = 0;
+    TickType_t last_draw = 0;
 
     while (true) {
         M5.update();
@@ -115,25 +116,30 @@ extern "C" void nuit_inject_ui_show(void)
 
         if (log_view) { mod_show_log_view(ID, "NUIT INJECT"); log_view = false; mod_drain_keys(); continue; }
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.setCursor(0, 0);
-        M5.Display.printf("NUIT INJECT  %s", s_injecting ? "<FIRING>" : "READY");
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
+            M5.Display.setCursor(0, 0);
+            M5.Display.printf("NUIT INJECT  %s", s_injecting ? "<FIRING>" : "READY");
 
-        M5.Display.setCursor(0, 12);
-        M5.Display.printf("Carrier: %.0f Hz SSB-AM", CARRIER_HZ);
+            M5.Display.setCursor(0, 12);
+            M5.Display.printf("Carrier: %.0f Hz SSB-AM", CARRIER_HZ);
 
-        for (int i = 0; i < s_cmd_count; i++) {
-            bool sel = (i == cursor);
-            M5.Display.setTextColor(sel ? TFT_BLACK : TFT_WHITE,
-                                    sel ? TFT_CYAN  : TFT_BLACK);
-            M5.Display.setCursor(0, 24 + i * MOD_LH);
-            M5.Display.printf("[%d] %s", i + 1, s_commands[i]);
+            for (int i = 0; i < s_cmd_count; i++) {
+                bool sel = (i == cursor);
+                M5.Display.setTextColor(sel ? TFT_BLACK : TFT_WHITE,
+                                        sel ? TFT_CYAN  : TFT_BLACK);
+                M5.Display.setCursor(0, 24 + i * MOD_LH);
+                M5.Display.printf("[%d] %s", i + 1, s_commands[i]);
+            }
+
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[,.][Ent]inject [L][`]back");
+
+            last_draw = now;
         }
-
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[,/.] [Ent]inject [L]log [`]bk");
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -147,6 +153,7 @@ extern "C" void nuit_inject_ui_show(void)
         else if (key == '\n' || key == '\r') {
             if (!s_injecting) s_inject_cmd = cursor;
         }
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(150));
     }
 }

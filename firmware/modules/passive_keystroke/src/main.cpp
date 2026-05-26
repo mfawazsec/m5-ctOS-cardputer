@@ -131,47 +131,52 @@ extern "C" void passive_keystroke_ui_show(void)
     mod_drain_keys();
     bool log_view = false;
 
+    TickType_t last_draw = 0;
+
     while (true) {
         M5.update();
         CardputerKb.update();
 
         if (log_view) { mod_show_log_view(ID, "PASSIVE KS"); log_view = false; mod_drain_keys(); continue; }
 
-        // Energy bar
-        uint32_t e    = s_last_energy;
-        uint32_t thr  = s_threshold;
-        int bars      = (int)(e * 20 / (thr * 3 + 1));
-        if (bars > 20) bars = 20;
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_draw) >= pdMS_TO_TICKS(250)) {
+            uint32_t e    = s_last_energy;
+            uint32_t thr  = s_threshold;
+            int bars      = (int)(e * 20 / (thr * 3 + 1));
+            if (bars > 20) bars = 20;
 
-        M5.Display.fillScreen(TFT_BLACK);
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        M5.Display.setCursor(0, 0); M5.Display.print("PASSIVE KEYSTROKE LOGGER");
+            M5.Display.fillScreen(TFT_BLACK);
+            M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
+            M5.Display.setCursor(0, 0); M5.Display.print("PASSIVE KEYSTROKE LOGGER");
 
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 14);
-        M5.Display.printf("Detected: %lu keystrokes", (unsigned long)s_ks_count);
-        M5.Display.setCursor(0, 26);
-        M5.Display.printf("Threshold: %lu  [+/-]", (unsigned long)thr);
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 14);
+            M5.Display.printf("Detected: %lu keystrokes", (unsigned long)s_ks_count);
+            M5.Display.setCursor(0, 26);
+            M5.Display.printf("Threshold: %lu  [+/-]", (unsigned long)thr);
 
-        // Energy bar
-        char bar[22];
-        for (int i = 0; i < 20; i++) bar[i] = (i < bars) ? '#' : ' ';
-        bar[20] = '\0';
-        M5.Display.setCursor(0, 38);
-        bool hot = (e > thr);
-        M5.Display.setTextColor(hot ? TFT_RED : TFT_WHITE, TFT_BLACK);
-        M5.Display.printf("Energy:[%s]", bar);
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setCursor(0, 50);
-        M5.Display.printf("Raw: %lu", (unsigned long)e);
-        M5.Display.setCursor(0, 62);
-        M5.Display.print("Mic: SPM1423 PDM (CLK=43/DIN=46)");
-        M5.Display.setCursor(0, 74);
-        M5.Display.print("Save: /sdcard/keystrokes/");
+            char bar[22];
+            for (int i = 0; i < 20; i++) bar[i] = (i < bars) ? '#' : ' ';
+            bar[20] = '\0';
+            M5.Display.setCursor(0, 38);
+            bool hot = (e > thr);
+            M5.Display.setTextColor(hot ? TFT_RED : TFT_WHITE, TFT_BLACK);
+            M5.Display.printf("Energy:[%s]", bar);
+            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+            M5.Display.setCursor(0, 50);
+            M5.Display.printf("Raw: %lu", (unsigned long)e);
+            M5.Display.setCursor(0, 62);
+            M5.Display.print("Mic: SPM1423 CLK43/DIN46");
+            M5.Display.setCursor(0, 74);
+            M5.Display.print("Save: /sdcard/keystrokes/");
 
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.setCursor(0, M5.Display.height() - 10);
-        M5.Display.print("[+/-]thr [R]reset [L]log [`]bk");
+            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+            M5.Display.setCursor(0, M5.Display.height() - 10);
+            M5.Display.print("[+/-]thr [R]rst [L][`]back");
+
+            last_draw = now;
+        }
 
         if (!CardputerKb.isChange() || !CardputerKb.isPressed()) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         auto kb = CardputerKb.getState();
@@ -182,6 +187,7 @@ extern "C" void passive_keystroke_ui_show(void)
         else if (key == '+' || key == '=') s_threshold += 100;
         else if (key == '-' && s_threshold > 100) s_threshold -= 100;
         else if (key == 'r' || key == 'R') s_ks_count = 0;
+        last_draw = 0;
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
