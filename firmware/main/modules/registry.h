@@ -11,7 +11,7 @@ extern "C" {
 #define MODULE_ID_MAX_LEN   32
 #define MODULE_NAME_MAX_LEN 64
 #define MODULE_VER_MAX_LEN  16
-#define MAX_LOADED_MODULES  16
+#define MAX_LOADED_MODULES  12
 
 typedef void (*module_ui_fn_t)(void);
 

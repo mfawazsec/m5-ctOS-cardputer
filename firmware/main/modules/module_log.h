@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-#define MOD_LOG_LINES    32
+#define MOD_LOG_LINES    16
 #define MOD_LOG_LINE_LEN 64
 
 void module_log_push(const char *module_id, const char *line);

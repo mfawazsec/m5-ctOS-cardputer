@@ -11,7 +11,7 @@
 
 static const char *TAG = "file_browser";
 
-#define MAX_ENTRIES 64
+#define MAX_ENTRIES 32
 #define LINE_HEIGHT 12
 
 typedef struct {
