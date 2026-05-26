@@ -44,4 +44,5 @@ idf_component_register(
         driver
         bt
         esp_hid
+        esp_driver_usb_serial_jtag
 )

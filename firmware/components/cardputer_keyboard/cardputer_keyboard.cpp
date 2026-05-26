@@ -17,6 +17,8 @@
 #include "cardputer_keyboard.h"
 #include "M5Unified.h"     /* for M5.In_I2C */
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include <cstring>
 
 /* ─── TCA8418 constants ─────────────────────────────────────────────────── */
@@ -97,6 +99,8 @@ static struct {
     cardputer_kb_state_t state;
 } s_kbd;
 
+static QueueHandle_t s_inject_queue = nullptr;
+
 /* Define the global C++ wrapper instance */
 CardputerKeyboard CardputerKb;
 
@@ -116,6 +120,8 @@ static inline uint8_t tca_read(uint8_t reg)
 bool cardputer_kb_init(void)
 {
     memset(&s_kbd, 0, sizeof(s_kbd));
+    if (!s_inject_queue)
+        s_inject_queue = xQueueCreate(8, sizeof(char));
 
     if (!M5.In_I2C.isEnabled()) {
         ESP_LOGW(TAG, "In_I2C not ready – keyboard disabled");
@@ -235,6 +241,22 @@ void cardputer_kb_update(void)
     }
 
     s_kbd.changed = changed;
+
+    /* Virtual key injection — overrides state only when no real key is held */
+    if (s_inject_queue && s_kbd.pressed_count == 0) {
+        char ch = 0;
+        if (xQueueReceive(s_inject_queue, &ch, 0) == pdTRUE) {
+            s_kbd.state.key.key.key_data.keys[0] = (uint8_t)ch;
+            s_kbd.changed      = true;
+            s_kbd.pressed_count = 1;
+        }
+    }
+}
+
+void cardputer_kb_inject_char(char ch)
+{
+    if (s_inject_queue)
+        xQueueSend(s_inject_queue, &ch, 0);
 }
 
 bool cardputer_kb_is_change(void)  { return s_kbd.changed; }

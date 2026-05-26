@@ -21,8 +21,33 @@
 #include "modules/loader.h"
 #include "cardputer_keyboard.h"
 #include "esp_heap_caps.h"
+#include "driver/usb_serial_jtag.h"
 
 static const char *TAG = "ctOS";
+
+/* Serial key-injection task — reads bytes from USB JTAG RX (i.e. host writing to
+ * /dev/ttyACM0) and injects them as virtual keypresses into the keyboard driver.
+ * Each injected char is paced 220ms apart so the UI render+debounce cycle
+ * (250ms + 150ms) completes before the next char arrives. */
+static void serial_inject_task(void *arg)
+{
+    uint8_t buf[4];
+    ESP_LOGI("serial", "Key injector ready — write chars to /dev/ttyACM0 to inject");
+    while (true) {
+        int n = usb_serial_jtag_read_bytes(buf, sizeof(buf), pdMS_TO_TICKS(100));
+        for (int i = 0; i < n; i++) {
+            char ch = (char)buf[i];
+            if (ch == '\r') ch = '\n';
+            /* Accept printable chars, Enter, ESC, DEL */
+            if (ch >= 0x20 || ch == '\n' || ch == 27 || ch == 127) {
+                ESP_LOGI("serial", "INJECT: 0x%02X '%c'", (uint8_t)ch,
+                         (ch >= 0x20 && ch < 127) ? ch : '?');
+                cardputer_kb_inject_char(ch);
+                vTaskDelay(pdMS_TO_TICKS(220));
+            }
+        }
+    }
+}
 
 extern "C" void app_main(void)
 {
@@ -160,6 +185,18 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "[6/9] keyboard OK");
     } else {
         ESP_LOGW(TAG, "[6/9] keyboard NOT found — continuing without keyboard");
+    }
+
+    /* ── [6b] Serial key injector via USB JTAG RX ───────────────────────── */
+    {
+        usb_serial_jtag_driver_config_t usjcfg = {
+            .tx_buffer_size = 64,
+            .rx_buffer_size = 256,
+        };
+        if (usb_serial_jtag_driver_install(&usjcfg) == ESP_OK)
+            xTaskCreate(serial_inject_task, "ser_inject", 2048, NULL, 3, NULL);
+        else
+            ESP_LOGW(TAG, "[6b] USB JTAG driver install failed — serial inject disabled");
     }
 
     /* ── [7/9] Memory view ───────────────────────────────────────────────── */

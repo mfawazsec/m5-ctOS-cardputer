@@ -67,6 +67,12 @@ bool cardputer_kb_is_pressed(void);
 /** Returns a snapshot of the current key state. */
 cardputer_kb_state_t cardputer_kb_get_state(void);
 
+/**
+ * Inject a virtual key press.  Enqueued and consumed on the next update() call.
+ * Safe to call from any task.  ch should be a printable ASCII char, '\n', 27 (ESC), or 127 (DEL).
+ */
+void cardputer_kb_inject_char(char ch);
+
 #ifdef __cplusplus
 }
 #endif
