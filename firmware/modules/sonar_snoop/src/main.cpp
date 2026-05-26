@@ -48,14 +48,43 @@ static float rms_f(const int16_t *buf, size_t n)
 static void sonar_task(void *arg)
 {
     // RX: PDM mic — CLK=GPIO43, DIN=GPIO46 (corrected for CardputerADV)
-    i2s_chan_config_t rx_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    i2s_new_channel(&rx_cfg, NULL, &s_rx_chan);
+    // Use minimal DMA descriptor count (2×64 = 256B vs default 6×240 = 2880B) to
+    // leave enough DMA-capable DRAM for M5.Speaker's I2S TX lazy init (needs ~4KB).
+    i2s_chan_config_t rx_cfg = {
+        .id = I2S_NUM_0, .role = I2S_ROLE_MASTER,
+        .dma_desc_num = 2, .dma_frame_num = 64,
+        .auto_clear = false, .intr_priority = 0,
+    };
+    if (i2s_new_channel(&rx_cfg, NULL, &s_rx_chan) != ESP_OK) {
+        s_api->log(ID, "I2S_NUM_0 busy — is passive_keystroke running?");
+        module_registry_set_running(ID, false);
+        vTaskDelete(NULL);
+        return;
+    }
     i2s_pdm_rx_config_t pdm = {
         .clk_cfg  = I2S_PDM_RX_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
         .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
         .gpio_cfg = { .clk = GPIO_NUM_43, .din = GPIO_NUM_46, .invert_flags = { .clk_inv = false } },
     };
-    i2s_channel_init_pdm_rx_mode(s_rx_chan, &pdm);
+    esp_err_t pdm_err = i2s_channel_init_pdm_rx_mode(s_rx_chan, &pdm);
+    if (pdm_err != ESP_OK) {
+        s_api->log(ID, "I2S PDM init failed — DMA alloc error");
+        i2s_del_channel(s_rx_chan);
+        module_registry_set_running(ID, false);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Enable once — per-cycle enable/disable causes repeated DMA reallocation
+    // which fails when the DMA pool is fragmented after other peripherals ran.
+    esp_err_t en_err = i2s_channel_enable(s_rx_chan);
+    if (en_err != ESP_OK) {
+        s_api->log(ID, "I2S enable failed — DMA alloc error");
+        i2s_del_channel(s_rx_chan);
+        module_registry_set_running(ID, false);
+        vTaskDelete(NULL);
+        return;
+    }
 
     // TX: pre-generate 5ms 20kHz ping for M5.Speaker.playRaw
     static int16_t s_ping_buf[PING_SAMPLES];
@@ -70,6 +99,7 @@ static void sonar_task(void *arg)
     if (!log_f) s_api->log(ID, "No SD — logging disabled");
 
     int16_t echo[LISTEN_SAMPLES];
+    int16_t drain[PING_SAMPLES];  // discard samples captured during TX
     float   z[2] = {};
     int     warmup = 0;
 
@@ -81,14 +111,15 @@ static void sonar_task(void *arg)
         for (int i = 0; i < 20 && M5.Speaker.isPlaying(0); i++)
             vTaskDelay(pdMS_TO_TICKS(1));
 
-        // RX: capture echo on PDM mic
-        i2s_channel_enable(s_rx_chan);
+        // Drain samples captured during TX (direct coupling artefact)
+        size_t dbytes;
+        i2s_channel_read(s_rx_chan, drain, sizeof(drain), &dbytes, pdMS_TO_TICKS(20));
+
+        // RX: capture echo — channel stays enabled throughout
         size_t rbytes;
         i2s_channel_read(s_rx_chan, echo, sizeof(echo), &rbytes, pdMS_TO_TICKS(50));
-        i2s_channel_disable(s_rx_chan);
 
-        float filtered[LISTEN_SAMPLES];
-        for (int i = 0; i < LISTEN_SAMPLES; i++) filtered[i] = iir_filter((float)echo[i], z);
+        for (int i = 0; i < LISTEN_SAMPLES; i++) iir_filter((float)echo[i], z);
         float energy = rms_f(echo, LISTEN_SAMPLES);
 
         if (warmup < 10) { s_baseline = (s_baseline * warmup + energy) / (warmup + 1); warmup++; }
@@ -98,13 +129,18 @@ static void sonar_task(void *arg)
 
         if (log_f) { fwrite(echo, 2, LISTEN_SAMPLES, log_f); fflush(log_f); }
 
-        char status[48];
-        int bars = (int)(s_last_delta / 500.0f);
-        if (bars < 0) bars = 0;
-        if (bars > 18) bars = 18;
-        char bar[20]; for (int i=0;i<18;i++) bar[i]=(i<bars)?'|':' '; bar[18]='\0';
-        snprintf(status, sizeof(status), "Echo [%s] %.0f", bar, s_last_delta);
-        s_api->display_print(ID, status);
+        static TickType_t s_last_disp = 0;
+        TickType_t now = xTaskGetTickCount();
+        if ((now - s_last_disp) >= pdMS_TO_TICKS(500)) {
+            char status[48];
+            int bars = (int)(s_last_delta / 500.0f);
+            if (bars < 0) bars = 0;
+            if (bars > 18) bars = 18;
+            char bar[20]; for (int i=0;i<18;i++) bar[i]=(i<bars)?'|':' '; bar[18]='\0';
+            snprintf(status, sizeof(status), "Echo [%s] %.0f", bar, s_last_delta);
+            s_api->display_print(ID, status);
+            s_last_disp = now;
+        }
 
         vTaskDelay(pdMS_TO_TICKS(25));
     }
@@ -127,6 +163,7 @@ extern "C" esp_err_t sonar_snoop_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(sonar_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

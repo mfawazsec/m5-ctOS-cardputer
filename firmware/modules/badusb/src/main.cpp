@@ -327,6 +327,7 @@ extern "C" esp_err_t badusb_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(badusb_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

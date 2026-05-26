@@ -63,7 +63,12 @@ static void save_keystroke(const int16_t *samples)
 static void keystroke_task(void *arg)
 {
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    i2s_new_channel(&chan_cfg, NULL, &s_rx_chan);
+    if (i2s_new_channel(&chan_cfg, NULL, &s_rx_chan) != ESP_OK) {
+        s_api->log(ID, "I2S_NUM_0 busy — is sonar_snoop running?");
+        module_registry_set_running(ID, false);
+        vTaskDelete(NULL);
+        return;
+    }
 
     i2s_pdm_rx_config_t pdm_cfg = {
         .clk_cfg  = I2S_PDM_RX_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
@@ -114,6 +119,7 @@ extern "C" esp_err_t passive_keystroke_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(keystroke_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

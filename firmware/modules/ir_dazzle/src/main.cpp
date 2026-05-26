@@ -62,10 +62,15 @@ static void ir_task(void *arg)
     s_api->log(ID, "IR dazzle ready");
 
     static const char *mode_str[] = { "CONTINUOUS", "BURST", "SWEEP" };
+    TickType_t last_disp = 0;
     while (s_active && module_registry_is_running(ID)) {
-        char status[48];
-        snprintf(status, sizeof(status), "IR %s ACTIVE", mode_str[s_mode]);
-        s_api->display_print(ID, status);
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_disp) >= pdMS_TO_TICKS(1000)) {
+            char status[48];
+            snprintf(status, sizeof(status), "IR %s ACTIVE", mode_str[s_mode]);
+            s_api->display_print(ID, status);
+            last_disp = now;
+        }
 
         switch (s_mode) {
         case MODE_CONTINUOUS: transmit_burst_ms(38000, 100, 0); break;
@@ -94,6 +99,7 @@ extern "C" esp_err_t ir_dazzle_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(ir_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

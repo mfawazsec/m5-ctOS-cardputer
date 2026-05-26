@@ -264,6 +264,12 @@ static const int k_payload_count = 3;
 static void ble_hid_task(void *arg)
 {
     ble_nimble_ensure_started();
+    if (!ble_nimble_hw_ok()) {
+        s_api->log(ID, "BLE unavailable. Disable WiFi AP or add PSRAM.");
+        module_registry_set_running(ID, false);
+        vTaskDelete(nullptr);
+        return;
+    }
 
     ble_svc_gap_device_name_set("ctOS Keyboard");
     ble_svc_gap_init();
@@ -307,6 +313,7 @@ extern "C" esp_err_t ble_hid_inject_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(ble_hid_task, TAG, 12288, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

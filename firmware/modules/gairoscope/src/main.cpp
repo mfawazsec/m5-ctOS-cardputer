@@ -18,18 +18,17 @@ static const ctos_api_t *s_api = nullptr;
 #define SAMPLE_RATE      44100
 #define FREQ_ZERO        19800.0f
 #define FREQ_ONE         20200.0f
-#define BIT_DURATION_MS  125
+#define BIT_DURATION_MS  50
 #define BIT_SAMPLES      (SAMPLE_RATE * BIT_DURATION_MS / 1000)
 #define PI               3.14159265358979f
 
 static volatile bool     s_transmitting = false;
 static volatile uint32_t s_bits_sent    = 0;
 
-static void transmit_bit(uint8_t bit)
+// Caller owns buf (BIT_SAMPLES * sizeof(int16_t) bytes)
+static void transmit_bit(uint8_t bit, int16_t *buf)
 {
-    float freq  = bit ? FREQ_ONE : FREQ_ZERO;
-    int16_t *buf = (int16_t *)s_api->psram_alloc(BIT_SAMPLES * sizeof(int16_t));
-    if (!buf) return;
+    float freq = bit ? FREQ_ONE : FREQ_ZERO;
     for (int i = 0; i < BIT_SAMPLES; i++) {
         float t = (float)i / SAMPLE_RATE;
         buf[i]  = (int16_t)(sinf(2.0f * PI * freq * t) * 24000.0f);
@@ -38,17 +37,16 @@ static void transmit_bit(uint8_t bit)
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(BIT_DURATION_MS + 100);
     while (M5.Speaker.isPlaying(0) && (int32_t)(deadline - xTaskGetTickCount()) > 0)
         vTaskDelay(pdMS_TO_TICKS(1));
-    s_api->psram_free(buf);
     s_bits_sent++;
 }
 
-static void transmit_message(const char *msg)
+static void transmit_message(const char *msg, int16_t *buf)
 {
     size_t len = strlen(msg);
-    for (int i = 0; i < 8; i++) transmit_bit(i & 1);
-    for (int b = 7; b >= 0; b--) transmit_bit(((uint8_t)len >> b) & 1);
+    for (int i = 0; i < 8; i++) transmit_bit(i & 1, buf);
+    for (int b = 7; b >= 0; b--) transmit_bit(((uint8_t)len >> b) & 1, buf);
     for (size_t i = 0; i < len && module_registry_is_running(ID); i++) {
-        for (int b = 7; b >= 0; b--) transmit_bit(((uint8_t)msg[i] >> b) & 1);
+        for (int b = 7; b >= 0; b--) transmit_bit(((uint8_t)msg[i] >> b) & 1, buf);
         char status[48];
         snprintf(status, sizeof(status), "TX %zu/%zu '%c' bits:%lu", i+1, len, msg[i], (unsigned long)s_bits_sent);
         s_api->display_print(ID, status);
@@ -57,17 +55,26 @@ static void transmit_message(const char *msg)
 
 static void gairoscope_task(void *arg)
 {
+    int16_t *buf = (int16_t *)s_api->psram_alloc(BIT_SAMPLES * sizeof(int16_t));
+    if (!buf) {
+        s_api->log(ID, "alloc failed");
+        module_registry_set_running(ID, false);
+        vTaskDelete(NULL);
+        return;
+    }
+
     M5.Speaker.setVolume(255);
 
     while (module_registry_is_running(ID)) {
         if (!s_transmitting) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
         s_api->log(ID, "Transmitting GAIROSCOPE message");
-        transmit_message("CTOS");
+        transmit_message("CTOS", buf);
         s_api->display_print(ID, "TX done. ~8 bits/sec");
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
     M5.Speaker.stop(0);
+    s_api->psram_free(buf);
     s_api->log(ID, "Gairoscope stopped");
     module_registry_set_running(ID, false);
     vTaskDelete(NULL);
@@ -82,6 +89,7 @@ extern "C" esp_err_t gairoscope_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(gairoscope_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

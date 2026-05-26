@@ -14,3 +14,4 @@ static inline void mod_drain_keys(void) {
 
 void mod_show_log_view(const char *module_id, const char *title);
 void ble_nimble_ensure_started(void);
+bool ble_nimble_hw_ok(void);  // true only if BT controller + NimBLE synced successfully

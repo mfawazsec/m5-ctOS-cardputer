@@ -90,9 +90,14 @@ static void csi_task(void *arg)
         s_frame_count++;
         render_bar_graph(frame.amplitudes, s_bar_buf);
 
-        char status[64];
-        snprintf(status, sizeof(status), "#%lu [%s]", (unsigned long)s_frame_count, s_bar_buf);
-        s_api->display_print(ID, status);
+        static TickType_t s_last_disp = 0;
+        TickType_t now = xTaskGetTickCount();
+        if ((now - s_last_disp) >= pdMS_TO_TICKS(500)) {
+            char status[64];
+            snprintf(status, sizeof(status), "#%lu [%s]", (unsigned long)s_frame_count, s_bar_buf);
+            s_api->display_print(ID, status);
+            s_last_disp = now;
+        }
 
         if (s_csv_file) {
             fprintf(s_csv_file, "%lu", (unsigned long)frame.timestamp_ms);
@@ -124,6 +129,7 @@ extern "C" esp_err_t passive_wifi_csi_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(csi_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

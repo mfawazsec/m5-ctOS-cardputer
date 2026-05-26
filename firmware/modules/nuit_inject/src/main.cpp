@@ -31,32 +31,35 @@ static const char *s_commands[] = {
 };
 static const int s_cmd_count = 5;
 
-static void synthesize_ssb_burst(int16_t *out, size_t n, float mod_hz)
-{
-    float usb = CARRIER_HZ + mod_hz;
-    for (size_t i = 0; i < n; i++) {
-        float t = (float)i / SAMPLE_RATE;
-        out[i]  = (int16_t)(cosf(2.0f * PI * usb * t) * 20000.0f);
-    }
-}
-
 static void do_inject(int idx)
 {
-    const size_t burst = SAMPLE_RATE / 2;
-    int16_t *buf = (int16_t *)s_api->psram_alloc(burst * sizeof(int16_t));
-    if (!buf) { s_api->log(ID, "PSRAM alloc failed"); return; }
-
-    float mod_hz = 400.0f + 200.0f * idx;
-    synthesize_ssb_burst(buf, burst, mod_hz);
+    // 2KB chunk → playback loop gives continuous 500ms burst without a large alloc
+    const size_t CHUNK = 1024;
+    int16_t *buf = (int16_t *)s_api->psram_alloc(CHUNK * sizeof(int16_t));
+    if (!buf) { s_api->log(ID, "alloc failed"); return; }
 
     char msg[64];
     snprintf(msg, sizeof(msg), "Injecting: %s", s_commands[idx]);
     s_api->display_print(ID, msg);
 
-    M5.Speaker.playRaw(buf, burst, SAMPLE_RATE, false, 1, 0, true);
-    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(2500);
-    while (M5.Speaker.isPlaying(0) && (int32_t)(deadline - xTaskGetTickCount()) > 0)
-        vTaskDelay(pdMS_TO_TICKS(5));
+    float mod_hz = 400.0f + 200.0f * idx;
+    float usb = CARRIER_HZ + mod_hz;
+    const size_t TOTAL = SAMPLE_RATE / 2;   // 500 ms
+    size_t played = 0;
+
+    M5.Speaker.setVolume(255);
+    while (played < TOTAL && module_registry_is_running(ID)) {
+        size_t n = (TOTAL - played < CHUNK) ? TOTAL - played : CHUNK;
+        for (size_t i = 0; i < n; i++) {
+            float t = (float)(played + i) / SAMPLE_RATE;
+            buf[i] = (int16_t)(cosf(2.0f * PI * usb * t) * 20000.0f);
+        }
+        M5.Speaker.playRaw(buf, n, SAMPLE_RATE, false, 1, 0, true);
+        TickType_t dl = xTaskGetTickCount() + pdMS_TO_TICKS(100);
+        while (M5.Speaker.isPlaying(0) && (int32_t)(dl - xTaskGetTickCount()) > 0)
+            vTaskDelay(pdMS_TO_TICKS(1));
+        played += n;
+    }
     s_api->psram_free(buf);
     s_api->display_print(ID, "Injection complete.");
 }
@@ -92,6 +95,7 @@ extern "C" esp_err_t nuit_inject_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(nuit_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

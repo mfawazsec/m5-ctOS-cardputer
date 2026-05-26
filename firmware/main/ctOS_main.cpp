@@ -20,6 +20,7 @@
 #include "modules/registry.h"
 #include "modules/loader.h"
 #include "cardputer_keyboard.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "ctOS";
 

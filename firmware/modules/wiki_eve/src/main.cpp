@@ -16,7 +16,7 @@ static const char *TAG = "wiki_eve";
 static const char *ID  = "wiki_eve";
 static const ctos_api_t *s_api = nullptr;
 
-#define BFI_PSRAM_BUFFER_SIZE (64 * 1024)
+#define BFI_PSRAM_BUFFER_SIZE (8 * 1024)
 #define BFI_SD_PATH           "/sdcard/bfi_capture.bin"
 
 static uint8_t  *s_psram_buf   = nullptr;
@@ -119,6 +119,7 @@ extern "C" esp_err_t wiki_eve_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(wiki_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

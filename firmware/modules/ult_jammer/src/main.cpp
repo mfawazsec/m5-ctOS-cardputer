@@ -16,7 +16,7 @@ static const char *ID  = "ult_jammer";
 static const ctos_api_t *s_api = nullptr;
 
 #define SAMPLE_RATE    44100
-#define CHUNK_SAMPLES  (SAMPLE_RATE / 10)   // 100ms of noise per chunk
+#define CHUNK_SAMPLES  (SAMPLE_RATE / 20)   // 50ms of noise per chunk — fits in heap without PSRAM
 #define PI             3.14159265358979f
 
 typedef enum { INTENSITY_LOW = 0, INTENSITY_MED, INTENSITY_HIGH } intensity_t;
@@ -68,10 +68,15 @@ static void jammer_task(void *arg)
             cur_on = false;
         }
 
-        char status[48];
-        snprintf(status, sizeof(status), "Jammer: %s | 18-22kHz",
-                 s_jammer_on ? level_str[s_intensity] : "OFF");
-        s_api->display_print(ID, status);
+        static TickType_t s_last_disp = 0;
+        TickType_t now = xTaskGetTickCount();
+        if ((now - s_last_disp) >= pdMS_TO_TICKS(2000)) {
+            char status[48];
+            snprintf(status, sizeof(status), "Jammer: %s | 18-22kHz",
+                     s_jammer_on ? level_str[s_intensity] : "OFF");
+            s_api->display_print(ID, status);
+            s_last_disp = now;
+        }
 
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -91,6 +96,7 @@ extern "C" esp_err_t ult_jammer_main(const ctos_api_t *api)
     module_registry_set_running(ID, true);
     if (xTaskCreate(jammer_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;

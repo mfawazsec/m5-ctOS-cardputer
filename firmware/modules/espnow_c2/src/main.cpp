@@ -111,8 +111,11 @@ extern "C" esp_err_t espnow_c2_main(const ctos_api_t *api)
     if (!s_rx_queue) return ESP_ERR_NO_MEM;
 
     module_registry_set_running(ID, true);
-    if (xTaskCreate(espnow_task, TAG, 8192, nullptr, 5, nullptr) != pdPASS) {
+    if (xTaskCreate(espnow_task, TAG, 4096, nullptr, 5, nullptr) != pdPASS) {
         module_registry_set_running(ID, false);
+        vQueueDelete(s_rx_queue);
+        s_rx_queue = nullptr;
+        ESP_LOGE(TAG, "xTaskCreate failed — free heap: %u B", (unsigned)esp_get_free_heap_size());
         return ESP_FAIL;
     }
     return ESP_OK;
