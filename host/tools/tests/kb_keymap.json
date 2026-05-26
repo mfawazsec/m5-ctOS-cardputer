@@ -1,0 +1,61 @@
+{
+  "_comment": "Ground-truth fixture for the M5 Cardputer QWERTY keyboard (TCA8418 7x7 matrix). code = row*10 + col + 1. 'normal' and 'fn' are ASCII decimal values, null means modifier/no-char.",
+  "matrix": { "rows": 7, "cols": 7, "stride": 10 },
+  "keys": [
+    {"row": 0, "col": 0, "code":  1, "label": "`",     "normal": 96,  "fn": 126},
+    {"row": 0, "col": 1, "code":  2, "label": "1",     "normal": 49,  "fn": 33},
+    {"row": 0, "col": 2, "code":  3, "label": "2",     "normal": 50,  "fn": 64},
+    {"row": 0, "col": 3, "code":  4, "label": "3",     "normal": 51,  "fn": 35},
+    {"row": 0, "col": 4, "code":  5, "label": "4",     "normal": 52,  "fn": 36},
+    {"row": 0, "col": 5, "code":  6, "label": "5",     "normal": 53,  "fn": 37},
+    {"row": 0, "col": 6, "code":  7, "label": "6",     "normal": 54,  "fn": 94},
+
+    {"row": 1, "col": 0, "code": 11, "label": "q",     "normal": 113, "fn": 81},
+    {"row": 1, "col": 1, "code": 12, "label": "w",     "normal": 119, "fn": 87},
+    {"row": 1, "col": 2, "code": 13, "label": "e",     "normal": 101, "fn": 69},
+    {"row": 1, "col": 3, "code": 14, "label": "r",     "normal": 114, "fn": 82},
+    {"row": 1, "col": 4, "code": 15, "label": "t",     "normal": 116, "fn": 84},
+    {"row": 1, "col": 5, "code": 16, "label": "y",     "normal": 121, "fn": 89},
+    {"row": 1, "col": 6, "code": 17, "label": "u",     "normal": 117, "fn": 85},
+
+    {"row": 2, "col": 0, "code": 21, "label": "a",     "normal": 97,  "fn": 65},
+    {"row": 2, "col": 1, "code": 22, "label": "s",     "normal": 115, "fn": 83},
+    {"row": 2, "col": 2, "code": 23, "label": "d",     "normal": 100, "fn": 68},
+    {"row": 2, "col": 3, "code": 24, "label": "f",     "normal": 102, "fn": 70},
+    {"row": 2, "col": 4, "code": 25, "label": "g",     "normal": 103, "fn": 71},
+    {"row": 2, "col": 5, "code": 26, "label": "h",     "normal": 104, "fn": 72},
+    {"row": 2, "col": 6, "code": 27, "label": "i",     "normal": 105, "fn": 105},
+
+    {"row": 3, "col": 0, "code": 31, "label": "z",     "normal": 122, "fn": 90},
+    {"row": 3, "col": 1, "code": 32, "label": "x",     "normal": 120, "fn": 88},
+    {"row": 3, "col": 2, "code": 33, "label": "c",     "normal": 99,  "fn": 67},
+    {"row": 3, "col": 3, "code": 34, "label": "v",     "normal": 118, "fn": 86},
+    {"row": 3, "col": 4, "code": 35, "label": "b",     "normal": 98,  "fn": 66},
+    {"row": 3, "col": 5, "code": 36, "label": "n",     "normal": 110, "fn": 78},
+    {"row": 3, "col": 6, "code": 37, "label": "j",     "normal": 106, "fn": 106},
+
+    {"row": 4, "col": 0, "code": 41, "label": "Fn",    "normal": null, "fn": null},
+    {"row": 4, "col": 1, "code": 42, "label": "Spc",   "normal": 32,  "fn": 32},
+    {"row": 4, "col": 2, "code": 43, "label": "k",     "normal": 107, "fn": 107},
+    {"row": 4, "col": 3, "code": 44, "label": "l",     "normal": 108, "fn": 108},
+    {"row": 4, "col": 4, "code": 45, "label": ",",     "normal": 44,  "fn": 60},
+    {"row": 4, "col": 5, "code": 46, "label": ".",     "normal": 46,  "fn": 62},
+    {"row": 4, "col": 6, "code": 47, "label": "/",     "normal": 47,  "fn": 63},
+
+    {"row": 5, "col": 0, "code": 51, "label": "Ctrl",  "normal": null, "fn": null},
+    {"row": 5, "col": 1, "code": 52, "label": "Alt",   "normal": null, "fn": null},
+    {"row": 5, "col": 2, "code": 53, "label": "o",     "normal": 111, "fn": 79},
+    {"row": 5, "col": 3, "code": 54, "label": "p",     "normal": 112, "fn": 80},
+    {"row": 5, "col": 4, "code": 55, "label": ";",     "normal": 59,  "fn": 58},
+    {"row": 5, "col": 5, "code": 56, "label": "'",     "normal": 39,  "fn": 34},
+    {"row": 5, "col": 6, "code": 57, "label": "Enter", "normal": 10,  "fn": 10},
+
+    {"row": 6, "col": 0, "code": 61, "label": "Shift", "normal": null, "fn": null},
+    {"row": 6, "col": 1, "code": 62, "label": "Del",   "normal": 127, "fn": 127},
+    {"row": 6, "col": 2, "code": 63, "label": "m",     "normal": 109, "fn": 77},
+    {"row": 6, "col": 3, "code": 64, "label": "Left",  "normal": null, "fn": null},
+    {"row": 6, "col": 4, "code": 65, "label": "Down",  "normal": null, "fn": null},
+    {"row": 6, "col": 5, "code": 66, "label": "Up",    "normal": null, "fn": null},
+    {"row": 6, "col": 6, "code": 67, "label": "Right", "normal": null, "fn": null}
+  ]
+}
