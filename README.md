@@ -13,6 +13,10 @@ built on ESP-IDF 5.x. All 12 modules are statically compiled into the firmware
 and available immediately. Configuration and future module upload happen through
 a built-in Wi-Fi web UI at `192.168.4.1`.
 
+> **Status (2026-05-27):** All 12 modules confirmed working — boot, UI navigation,
+> and functional flows verified via serial key injection (see below).
+> Free heap at boot: ~19 KB. Zero crashes across full UI sweep.
+
 ---
 
 ## Repository Layout
@@ -462,6 +466,7 @@ The `app_main()` in `ctOS_main.cpp` runs these stages in order:
 4. **Module registry + loader**: `module_registry_init()` zeros the registry; `module_loader_init()` registers all 12 built-in modules and scans `/modules` and `/sdcard/modules` for extras
 5. **Display**: `M5.begin()` inside `ui_menu_init()` initialises the M5Unified stack, sets display brightness and text size
 6. **Keyboard**: `CardputerKb.init()` probes the TCA8418 at I2C address 0x34; continues without keyboard if not found
+6b. **Serial inject task**: installs the USB JTAG driver and starts `serial_inject_task` (2 KB stack, priority 3) — prints `Key injector ready` to serial when live
 7. **Memory view**: initialises the memory statistics screen
 8. **Wi-Fi AP**: starts SoftAP and HTTP server if enabled in config
 9. **Autoload**: calls `module_loader_start()` for each module ID in the NVS autoload list
@@ -489,12 +494,29 @@ The keymap is derived from the reference M5Stack Cardputer ADV launcher. The
 TCA8418 uses a 10-column stride in its event code (row * 10 + col), requiring
 a mask and stride correction in the event decoder.
 
+**Serial key injection:** `cardputer_kb_inject_char(ch)` queues a virtual
+keypress consumed on the next `update()` call. A background task reads bytes
+from the USB JTAG serial interface (`/dev/ttyACM0`) and injects them — this
+allows full remote UI testing without a physical keyboard:
+
+```python
+import serial
+s = serial.Serial('/dev/ttyACM0', 115200)
+s.write(b'.\n')   # down, enter — navigate and open a module
+s.write(b'`')     # back to previous screen
+```
+
+The inject task paces injections at 220 ms intervals to match the UI's 250 ms
+render timer + 150 ms debounce cycle.
+
 ### Display
 
-240 x 135 pixel IPS LCD, driven by M5Unified. Text is set to size 1.5 (18px
-effective height, 12px line height with `MOD_LH = 12`). Each module UI is a
-full-screen repaint loop running at ~20 fps when idle (50ms delay) and faster
-when input is detected.
+240 x 135 pixel IPS LCD, driven by M5Unified. Text is set to size 1.5 (approx
+9px character width, 12px line height with `MOD_LH = 12`), giving a maximum of
+26 characters per line. Each module UI uses a **250 ms render timer** — the
+display is only redrawn when the timer fires or a key is pressed, eliminating
+flicker while keeping navigation responsive. All footer/status strings are
+kept to ≤26 chars to fit within the 240px display width at this text size.
 
 ### Storage layout
 
