@@ -2,7 +2,6 @@
 #include "modules/registry.h"
 #include "wifi/hotspot.h"
 #include "esp_heap_caps.h"
-#include "esp_psram.h"
 #include "esp_log.h"
 #include "M5Unified.h"
 #include "freertos/FreeRTOS.h"
@@ -86,8 +85,7 @@ static void render_to(LovyanGFX *dst, bool first_frame)
     line_printf(dst, y, TFT_WHITE,
                 "Heap:%uK PSRAM:%uK",
                 (unsigned)(esp_get_free_heap_size() / 1024),
-                (unsigned)(esp_psram_is_initialized()
-                    ? heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024 : 0));
+                (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
     y += LINEH;
 
     /* Module list header */

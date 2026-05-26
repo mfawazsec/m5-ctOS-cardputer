@@ -3,7 +3,6 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "esp_psram.h"
 #include "esp_spiffs.h"
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
@@ -57,10 +56,12 @@ extern "C" void app_main(void)
 
     /* ── [2/9] PSRAM ─────────────────────────────────────────────────────── */
     ESP_LOGI(TAG, "[2/9] PSRAM check...");
-    if (esp_psram_is_initialized()) {
-        ESP_LOGI(TAG, "[2/9] PSRAM: %zu KB available", esp_psram_get_size() / 1024);
-    } else {
-        ESP_LOGW(TAG, "[2/9] PSRAM not initialised");
+    {
+        size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        if (psram_free > 0)
+            ESP_LOGI(TAG, "[2/9] PSRAM: %zu KB free", psram_free / 1024);
+        else
+            ESP_LOGW(TAG, "[2/9] PSRAM not available");
     }
 
     /* ── [3/9] Config ────────────────────────────────────────────────────── */

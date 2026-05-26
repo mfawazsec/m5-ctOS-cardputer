@@ -6,23 +6,21 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# PSRAM (8MB OSPI)
-CONFIG_ESP32S3_SPIRAM_SUPPORT=y
-CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_SPEED_40M=y
-CONFIG_SPIRAM_USE_MALLOC=y
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8192
-CONFIG_SPIRAM_IGNORE_NOTFOUND=y
-CONFIG_SPIRAM_MEMTEST=n
+# PSRAM — hardware has no working PSRAM; disabling avoids boot errors and
+# unblocks WiFi dynamic TX buffers (ESP_WIFI_DYNAMIC_TX_BUFFER depends on
+# !SPIRAM_USE_MALLOC, and ESP_WIFI_CACHE_TX_BUFFER_NUM depends on SPIRAM).
+# Module code already falls back to regular heap when SPIRAM alloc returns NULL.
+# CONFIG_SPIRAM is not set
 
-# WiFi — dynamic TX buffers because PSRAM is unavailable; static buffers
-# cause esf_buf_setup_static alloc failures and leave min_heap at 2KB.
+# WiFi — dynamic TX buffers (valid when SPIRAM is disabled).
+# Static RX buffers reduced from default 10 → 6 to recover ~9 KB of heap
+# (6 × 2212 bytes = 13 KB vs 22 KB); 6 is sufficient for a low-traffic AP.
 CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
 CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=y
 CONFIG_ESP_WIFI_CSI_ENABLED=y
 CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER=y
 CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
-CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=0
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
 
 # USB (HID device for BadUSB module)
 CONFIG_USB_OTG_SUPPORTED=y

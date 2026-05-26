@@ -5,9 +5,12 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
-#include "esp_psram.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static const char *TAG = "webserver";
 static httpd_handle_t s_server = NULL;
@@ -34,7 +37,7 @@ static esp_err_t handle_root(httpd_req_t *req)
 
     char body[1024];
     size_t free_heap  = esp_get_free_heap_size();
-    size_t free_psram = esp_psram_is_initialized() ? heap_caps_get_free_size(MALLOC_CAP_SPIRAM) : 0;
+    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     int    mod_count  = module_registry_count();
 
     snprintf(body, sizeof(body),
@@ -46,7 +49,6 @@ static esp_err_t handle_root(httpd_req_t *req)
         "<p>PSRAM free: %zu KB</p>"
         "<p>Loaded modules: %d</p>"
         "<nav><a href=/modules>Modules</a> | "
-        "<a href=/files>Files</a> | "
         "<a href=/settings>Settings</a></nav>"
         "</body></html>",
         free_heap / 1024, free_psram / 1024, mod_count);
@@ -121,9 +123,6 @@ static esp_err_t handle_modules(httpd_req_t *req)
         "<!DOCTYPE html><html><head><meta charset=utf-8>"
         "<title>ctOS - Modules</title></head><body>"
         "<h2>Modules</h2>"
-        "<form method=POST action=/modules/upload enctype=multipart/form-data>"
-        "<input type=file name=ctm accept='.ctm'>"
-        "<button type=submit>Upload .ctm</button></form><hr>"
         "<table border=1><tr><th>ID</th><th>Name</th><th>Version</th><th>Status</th><th>Action</th></tr>");
 
     int count = module_registry_count();
@@ -181,12 +180,106 @@ static esp_err_t handle_settings(httpd_req_t *req)
     return ESP_OK;
 }
 
+// ---- POST /modules/toggle ----
+static esp_err_t handle_modules_toggle(httpd_req_t *req)
+{
+    if (!is_authed(req)) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/auth");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    }
+    char body[64] = {};
+    httpd_req_recv(req, body, sizeof(body) - 1);
+
+    char id[MODULE_ID_MAX_LEN] = {};
+    char *p = strstr(body, "id=");
+    if (p) {
+        strlcpy(id, p + 3, sizeof(id));
+        char *amp = strchr(id, '&');
+        if (amp) *amp = '\0';
+    }
+    if (id[0]) {
+        if (module_registry_is_running(id))
+            module_loader_stop(id);
+        else
+            module_loader_start(id);
+    }
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "/modules");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+// ---- POST /settings/save ----
+static esp_err_t handle_settings_save(httpd_req_t *req)
+{
+    if (!is_authed(req)) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/auth");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    }
+    char body[512] = {};
+    int received = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (received <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No body");
+        return ESP_OK;
+    }
+
+    auto get_field = [](const char *src, const char *key, char *out, size_t out_sz) {
+        char needle[64];
+        snprintf(needle, sizeof(needle), "%s=", key);
+        const char *p = strstr(src, needle);
+        if (!p) { out[0] = '\0'; return; }
+        p += strlen(needle);
+        strlcpy(out, p, out_sz);
+        char *amp = strchr(out, '&');
+        if (amp) *amp = '\0';
+    };
+
+    char ssid[33] = {}, pass[64] = {}, brightness_s[8] = {}, pin[8] = {};
+    get_field(body, "ssid",       ssid,         sizeof(ssid));
+    get_field(body, "pass",       pass,         sizeof(pass));
+    get_field(body, "brightness", brightness_s, sizeof(brightness_s));
+    get_field(body, "pin",        pin,          sizeof(pin));
+
+    if (ssid[0])                           config_set_wifi_ssid(ssid);
+    if (pass[0])                           config_set_wifi_password(pass);
+    if (brightness_s[0])                   config_set_brightness((uint8_t)atoi(brightness_s));
+    if (pin[0] && strlen(pin) == 4)        config_set_pin(pin);
+
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "/settings");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+// ---- POST /settings/reboot ----
+static esp_err_t handle_settings_reboot(httpd_req_t *req)
+{
+    if (!is_authed(req)) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/auth");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_sendstr(req, "<html><body><p>Rebooting...</p></body></html>");
+    vTaskDelay(pdMS_TO_TICKS(300));
+    esp_restart();
+    return ESP_OK;
+}
+
 static const httpd_uri_t uri_table[] = {
-    { .uri = "/",             .method = HTTP_GET,  .handler = handle_root },
-    { .uri = "/auth",         .method = HTTP_GET,  .handler = handle_auth_get },
-    { .uri = "/auth",         .method = HTTP_POST, .handler = handle_auth_post },
-    { .uri = "/modules",      .method = HTTP_GET,  .handler = handle_modules },
-    { .uri = "/settings",     .method = HTTP_GET,  .handler = handle_settings },
+    { .uri = "/",               .method = HTTP_GET,  .handler = handle_root },
+    { .uri = "/auth",           .method = HTTP_GET,  .handler = handle_auth_get },
+    { .uri = "/auth",           .method = HTTP_POST, .handler = handle_auth_post },
+    { .uri = "/modules",        .method = HTTP_GET,  .handler = handle_modules },
+    { .uri = "/modules/toggle", .method = HTTP_POST, .handler = handle_modules_toggle },
+    { .uri = "/settings",       .method = HTTP_GET,  .handler = handle_settings },
+    { .uri = "/settings/save",  .method = HTTP_POST, .handler = handle_settings_save },
+    { .uri = "/settings/reboot",.method = HTTP_POST, .handler = handle_settings_reboot },
 };
 
 void webserver_start(void)
