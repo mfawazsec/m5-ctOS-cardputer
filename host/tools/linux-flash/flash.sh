@@ -93,6 +93,27 @@ run_monitor_logged() {
     echo "    ${LOG_FILE}"
 }
 
+# ── esptool.py write_flash with known-good settings for Cardputer ADV ────────
+# ESP32-S3, 8 MB GD flash, DIO mode, 80 MHz — mirrors the working manual command.
+do_flash() {
+    local port="$1" baud="$2"
+    local build="${FIRMWARE_DIR}/build"
+    echo "==> Flashing to ${port} at ${baud} baud..."
+    esptool.py \
+        --chip esp32s3 \
+        --port  "${port}" \
+        --baud  "${baud}" \
+        --before default_reset \
+        --after  hard_reset \
+        write_flash \
+        --flash_mode dio \
+        --flash_size 8MB \
+        --flash_freq 80m \
+        0x0     "${build}/bootloader/bootloader.bin" \
+        0x8000  "${build}/partition_table/partition-table.bin" \
+        0x10000 "${build}/m5-ctOS.bin"
+}
+
 # All idf.py commands run from the firmware directory
 cd "${FIRMWARE_DIR}"
 
@@ -101,20 +122,18 @@ case "$MODE" in
         echo "==> Building..."
         idf.py build
         echo ""
-        echo "==> Flashing to ${PORT}..."
-        idf.py -p "${PORT}" -b "${BAUD}" flash
+        do_flash "${PORT}" "${BAUD}"
         echo ""
         run_monitor_logged "${PORT}"
         ;;
 
     flash-only)
-        echo "==> Flashing to ${PORT} (no build)..."
-        idf.py -p "${PORT}" -b "${BAUD}" flash
+        do_flash "${PORT}" "${BAUD}"
         ;;
 
     flash-log)
-        echo "==> Flashing to ${PORT} (no build) then monitoring..."
-        idf.py -p "${PORT}" -b "${BAUD}" flash
+        echo "==> Flashing then monitoring..."
+        do_flash "${PORT}" "${BAUD}"
         echo ""
         run_monitor_logged "${PORT}"
         ;;
@@ -128,8 +147,8 @@ case "$MODE" in
         echo "    WARNING: This wipes all NVS data including PIN and WiFi settings."
         read -r -p "    Continue? [y/N] " confirm
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            esptool.py --port "${PORT}" --baud "${BAUD}" erase_flash
-            echo "    Flash erased. Flash again with: ./host/tools/linux-flash/flash.sh flash-only"
+            esptool.py --chip esp32s3 --port "${PORT}" --baud "${BAUD}" erase_flash
+            echo "    Flash erased. Reflash with: ./host/tools/linux-flash/flash.sh flash-only"
         else
             echo "    Aborted."
         fi
@@ -140,7 +159,7 @@ case "$MODE" in
         echo ""
         echo "  all        build + flash + monitor (with logging)"
         echo "  flash-only flash only, no monitor"
-        echo "  flash-log  flash-only + monitor (with logging)"
+        echo "  flash-log  flash + monitor (with logging)"
         echo "  monitor    monitor only (with logging)"
         echo "  log        alias for monitor"
         echo "  erase      erase entire flash"
